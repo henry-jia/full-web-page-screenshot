@@ -1,0 +1,38 @@
+{
+  "manifest_version": 2,
+  "name": "Full Web Page Screenshot",
+  "version": "0.1.0",
+  "description": "Capture the complete scrollable area of the active page as a local PNG.",
+  "permissions": [
+    "activeTab",
+    "downloads"
+  ],
+  "background": {
+    "scripts": [
+      "capture-plan.js",
+      "background.js"
+    ],
+    "persistent": true
+  },
+  "browser_action": {
+    "default_title": "Capture full page",
+    "default_popup": "popup/popup.html",
+    "default_icon": "icons/capture.svg"
+  },
+  "icons": {
+    "48": "icons/capture.svg",
+    "96": "icons/capture.svg"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "full-web-page-screenshot@henry-jia.github.io",
+      "strict_min_version": "142.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
+  },
+  "homepage_url": "https://github.com/henry-jia/full-web-page-screenshot"
+}

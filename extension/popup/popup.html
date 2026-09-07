@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>完整頁面截圖</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="capture-panel">
+      <header class="capture-header">
+        <p class="eyebrow">FULL PAGE / LOCAL</p>
+        <h1>完整頁面截圖</h1>
+        <p class="intro">自動捲動目前分頁，拼接後直接下載 PNG。</p>
+      </header>
+
+      <button id="capture-button" class="capture-button" type="button">
+        擷取完整頁面
+      </button>
+
+      <section id="status-panel" class="status-panel" aria-live="polite">
+        <div class="status-heading">
+          <span id="status-label">待命</span>
+          <span id="segment-count" class="segment-count">0 / 0</span>
+        </div>
+        <p id="status-message">準備好擷取目前頁面。</p>
+        <div
+          id="progress-track"
+          class="progress-track"
+          role="progressbar"
+          aria-label="擷取進度"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+          hidden
+        >
+          <span id="progress-fill" class="progress-fill"></span>
+        </div>
+      </section>
+
+      <p class="privacy-note">影像只在本機處理，不會上傳。</p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
+

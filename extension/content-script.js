@@ -1,0 +1,643 @@
+(function installFullPageCaptureContentScript() {
+  "use strict";
+
+  if (globalThis.__fullPageScreenshotContentScriptInstalled) {
+    return;
+  }
+  globalThis.__fullPageScreenshotContentScriptInstalled = true;
+
+  const CAPTURE_ATTRIBUTE = "data-fwps-capturing";
+  const STYLE_ID = "__fwps-capture-style";
+  const MAX_WARMUP_STEPS = 100;
+  const MAX_SCROLL_ATTEMPTS = 3;
+  const SCROLL_FLOAT_EPSILON_CSS_PX = 0.001;
+  let captureSession = null;
+
+  class ContentCaptureError extends Error {
+    constructor(code, message, details) {
+      super(message);
+      this.name = "ContentCaptureError";
+      this.code = code;
+      this.details = details;
+    }
+  }
+
+  function wait(milliseconds) {
+    return new Promise((resolve) => globalThis.setTimeout(resolve, milliseconds));
+  }
+
+  function nextFrame() {
+    return new Promise((resolve) => globalThis.requestAnimationFrame(resolve));
+  }
+
+  async function waitForPageToSettle() {
+    await nextFrame();
+    await nextFrame();
+    await wait(140);
+    await nextFrame();
+  }
+
+  function getWindowMetrics() {
+    const root = document.documentElement;
+    const body = document.body;
+    const widths = [
+      root.scrollWidth,
+      root.offsetWidth,
+      root.clientWidth,
+      body ? body.scrollWidth : 0,
+      body ? body.offsetWidth : 0,
+      body ? body.clientWidth : 0,
+    ];
+    const heights = [
+      root.scrollHeight,
+      root.offsetHeight,
+      root.clientHeight,
+      body ? body.scrollHeight : 0,
+      body ? body.offsetHeight : 0,
+      body ? body.clientHeight : 0,
+    ];
+
+    return {
+      documentWidth: Math.max(...widths),
+      documentHeight: Math.max(...heights),
+      viewportWidth: globalThis.innerWidth,
+      viewportHeight: globalThis.innerHeight,
+      devicePixelRatio: globalThis.devicePixelRatio || 1,
+    };
+  }
+
+  function hasScrollRange(metrics) {
+    return (
+      metrics.documentWidth > metrics.viewportWidth + 1 ||
+      metrics.documentHeight > metrics.viewportHeight + 1
+    );
+  }
+
+  function getMaximumScrollRange(metrics) {
+    return Math.max(
+      0,
+      metrics.documentWidth - metrics.viewportWidth,
+      metrics.documentHeight - metrics.viewportHeight,
+    );
+  }
+
+  function findDominantElementScroller() {
+    let best = null;
+
+    for (const element of document.querySelectorAll("body *")) {
+      const style = globalThis.getComputedStyle(element);
+      const scrollableX = /^(auto|scroll|overlay)$/.test(style.overflowX || "");
+      const scrollableY = /^(auto|scroll|overlay)$/.test(style.overflowY || "");
+      const rangeX = scrollableX
+        ? Math.max(0, element.scrollWidth - element.clientWidth)
+        : 0;
+      const rangeY = scrollableY
+        ? Math.max(0, element.scrollHeight - element.clientHeight)
+        : 0;
+
+      if (rangeX <= 1 && rangeY <= 1) {
+        continue;
+      }
+
+      const rect = element.getBoundingClientRect();
+      const visibleWidth = Math.max(
+        0,
+        Math.min(rect.right, globalThis.innerWidth) - Math.max(rect.left, 0),
+      );
+      const visibleHeight = Math.max(
+        0,
+        Math.min(rect.bottom, globalThis.innerHeight) - Math.max(rect.top, 0),
+      );
+
+      if (
+        visibleWidth < globalThis.innerWidth * 0.2 ||
+        visibleHeight < globalThis.innerHeight * 0.2
+      ) {
+        continue;
+      }
+
+      const score =
+        visibleWidth *
+        visibleHeight *
+        (1 + Math.log2(1 + Math.max(rangeX, rangeY)));
+      if (!best || score > best.score) {
+        best = { element, score };
+      }
+    }
+
+    return best ? best.element : null;
+  }
+
+  function preserveStyleProperty(element, name) {
+    return {
+      name,
+      priority: element.style.getPropertyPriority(name),
+      value: element.style.getPropertyValue(name),
+    };
+  }
+
+  function restoreStyleProperty(element, property) {
+    if (property.value) {
+      element.style.setProperty(property.name, property.value, property.priority);
+    } else {
+      element.style.removeProperty(property.name);
+    }
+  }
+
+  function createScrollTarget() {
+    const windowMetrics = getWindowMetrics();
+    const element = findDominantElementScroller();
+    const windowRange = getMaximumScrollRange(windowMetrics);
+    const minorWindowOverflow =
+      windowRange <=
+      Math.max(windowMetrics.viewportWidth, windowMetrics.viewportHeight) * 0.05;
+
+    if (hasScrollRange(windowMetrics) && (!element || !minorWindowOverflow)) {
+      return {
+        mode: "window",
+        originalX: globalThis.scrollX,
+        originalY: globalThis.scrollY,
+      };
+    }
+
+    if (!element) {
+      return {
+        mode: "window",
+        originalX: globalThis.scrollX,
+        originalY: globalThis.scrollY,
+      };
+    }
+
+    const scrollbarWidth = preserveStyleProperty(element, "scrollbar-width");
+    const overflowAnchor = preserveStyleProperty(element, "overflow-anchor");
+    const scrollBehavior = preserveStyleProperty(element, "scroll-behavior");
+    const scrollSnapType = preserveStyleProperty(element, "scroll-snap-type");
+    element.style.setProperty("scrollbar-width", "none", "important");
+    element.style.setProperty("overflow-anchor", "none", "important");
+    element.style.setProperty("scroll-behavior", "auto", "important");
+    element.style.setProperty("scroll-snap-type", "none", "important");
+
+    return {
+      element,
+      mode: "element",
+      originalX: element.scrollLeft,
+      originalY: element.scrollTop,
+      overflowAnchor,
+      scrollbarWidth,
+      scrollBehavior,
+      scrollSnapType,
+    };
+  }
+
+  function getTargetMetrics(target) {
+    if (target.mode === "window") {
+      return getWindowMetrics();
+    }
+
+    return {
+      documentWidth: target.element.scrollWidth,
+      documentHeight: target.element.scrollHeight,
+      viewportWidth: target.element.clientWidth,
+      viewportHeight: target.element.clientHeight,
+      devicePixelRatio: globalThis.devicePixelRatio || 1,
+    };
+  }
+
+  function setTargetScroll(target, x, y) {
+    if (target.mode === "window") {
+      globalThis.scrollTo(x, y);
+    } else {
+      target.element.scrollLeft = x;
+      target.element.scrollTop = y;
+    }
+  }
+
+  function getTargetScroll(target) {
+    if (target.mode === "window") {
+      return { x: globalThis.scrollX, y: globalThis.scrollY };
+    }
+
+    return { x: target.element.scrollLeft, y: target.element.scrollTop };
+  }
+
+  function getPageBackgroundColor() {
+    const candidates = [document.body, document.documentElement];
+
+    for (const element of candidates) {
+      if (!element) {
+        continue;
+      }
+      const color = globalThis.getComputedStyle(element).backgroundColor;
+      if (color && color !== "transparent" && color !== "rgba(0, 0, 0, 0)") {
+        return color;
+      }
+    }
+
+    return "rgb(255, 255, 255)";
+  }
+
+  function getCaptureDescriptor(target, metrics) {
+    if (target.mode === "window") {
+      return {
+        backgroundColor: getPageBackgroundColor(),
+        bitmapViewportHeight: globalThis.innerHeight,
+        bitmapViewportWidth: globalThis.innerWidth,
+        frame: null,
+        mode: "window",
+        outputHeight: metrics.documentHeight,
+        outputWidth: metrics.documentWidth,
+      };
+    }
+
+    const rect = target.element.getBoundingClientRect();
+    const x = rect.left + target.element.clientLeft;
+    const y = rect.top + target.element.clientTop;
+    const width = target.element.clientWidth;
+    const height = target.element.clientHeight;
+    const visibilityTolerance = 0.5;
+
+    if (
+      x < -visibilityTolerance ||
+      y < -visibilityTolerance ||
+      x + width > globalThis.innerWidth + visibilityTolerance ||
+      y + height > globalThis.innerHeight + visibilityTolerance
+    ) {
+      throw new ContentCaptureError(
+        "SCROLL_TARGET_NOT_FULLY_VISIBLE",
+        "The selected scroll container is not fully visible in the viewport.",
+      );
+    }
+
+    return {
+      backgroundColor: getPageBackgroundColor(),
+      bitmapViewportHeight: globalThis.innerHeight,
+      bitmapViewportWidth: globalThis.innerWidth,
+      frame: { x, y, width, height },
+      mode: "element",
+      outputHeight: globalThis.innerHeight + (metrics.documentHeight - height),
+      outputWidth: globalThis.innerWidth + (metrics.documentWidth - width),
+    };
+  }
+
+  function installCaptureStyle() {
+    if (document.getElementById(STYLE_ID)) {
+      throw new ContentCaptureError(
+        "CAPTURE_STYLE_CONFLICT",
+        "The capture style marker already exists.",
+      );
+    }
+
+    const style = document.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = `
+      html[${CAPTURE_ATTRIBUTE}] {
+        scroll-behavior: auto !important;
+        scroll-snap-type: none !important;
+        scrollbar-width: none !important;
+      }
+      html[${CAPTURE_ATTRIBUTE}] body {
+        scroll-snap-type: none !important;
+      }
+      html[${CAPTURE_ATTRIBUTE}]::-webkit-scrollbar,
+      html[${CAPTURE_ATTRIBUTE}] body::-webkit-scrollbar {
+        display: none !important;
+      }
+      html[${CAPTURE_ATTRIBUTE}] *,
+      html[${CAPTURE_ATTRIBUTE}] *::before,
+      html[${CAPTURE_ATTRIBUTE}] *::after {
+        animation-play-state: paused !important;
+        caret-color: transparent !important;
+        transition-property: none !important;
+      }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+    return style;
+  }
+
+  async function warmScrollablePage(target) {
+    let verticalSteps = 0;
+    let y = 0;
+
+    while (verticalSteps < MAX_WARMUP_STEPS) {
+      const metrics = getTargetMetrics(target);
+      const lastY = Math.max(0, metrics.documentHeight - metrics.viewportHeight);
+
+      if (y >= lastY) {
+        break;
+      }
+
+      y = Math.min(y + metrics.viewportHeight, lastY);
+      setTargetScroll(target, 0, y);
+      await wait(80);
+      verticalSteps += 1;
+    }
+
+    let horizontalSteps = 0;
+    let x = 0;
+    while (horizontalSteps < MAX_WARMUP_STEPS) {
+      const metrics = getTargetMetrics(target);
+      const lastX = Math.max(0, metrics.documentWidth - metrics.viewportWidth);
+
+      if (x >= lastX) {
+        break;
+      }
+
+      x = Math.min(x + metrics.viewportWidth, lastX);
+      setTargetScroll(target, x, 0);
+      await wait(80);
+      horizontalSteps += 1;
+    }
+
+    setTargetScroll(target, 0, 0);
+    await waitForPageToSettle();
+  }
+
+  function collectPositionedElements() {
+    const fixed = [];
+    const sticky = [];
+
+    for (const element of document.querySelectorAll("body *")) {
+      const position = globalThis.getComputedStyle(element).position;
+
+      if (position === "fixed") {
+        fixed.push({
+          element,
+          visibility: element.style.getPropertyValue("visibility"),
+          priority: element.style.getPropertyPriority("visibility"),
+        });
+      } else if (position === "sticky") {
+        sticky.push({
+          element,
+          position: element.style.getPropertyValue("position"),
+          priority: element.style.getPropertyPriority("position"),
+        });
+      }
+    }
+
+    return { fixed, sticky };
+  }
+
+  function setFixedVisibility(hidden) {
+    if (!captureSession) {
+      return;
+    }
+
+    for (const fixed of captureSession.fixed) {
+      if (!fixed.element.isConnected) {
+        continue;
+      }
+
+      if (hidden) {
+        fixed.element.style.setProperty("visibility", "hidden", "important");
+      } else if (fixed.visibility) {
+        fixed.element.style.setProperty(
+          "visibility",
+          fixed.visibility,
+          fixed.priority,
+        );
+      } else {
+        fixed.element.style.removeProperty("visibility");
+      }
+    }
+  }
+
+  function neutralizeStickyElements() {
+    for (const sticky of captureSession.sticky) {
+      if (sticky.element.isConnected) {
+        sticky.element.style.setProperty("position", "static", "important");
+      }
+    }
+  }
+
+  function restoreStickyElements(session) {
+    for (const sticky of session.sticky) {
+      if (!sticky.element.isConnected) {
+        continue;
+      }
+
+      if (sticky.position) {
+        sticky.element.style.setProperty("position", sticky.position, sticky.priority);
+      } else {
+        sticky.element.style.removeProperty("position");
+      }
+    }
+  }
+
+  async function prepareCapture() {
+    if (captureSession) {
+      throw new ContentCaptureError(
+        "CAPTURE_ALREADY_ACTIVE",
+        "A capture is already active in this page.",
+      );
+    }
+
+    const root = document.documentElement;
+    captureSession = {
+      originalX: globalThis.scrollX,
+      originalY: globalThis.scrollY,
+      previousCaptureAttribute: root.getAttribute(CAPTURE_ATTRIBUTE),
+      style: null,
+      fixed: [],
+      scrollTarget: null,
+      sticky: [],
+    };
+
+    try {
+      captureSession.style = installCaptureStyle();
+      root.setAttribute(CAPTURE_ATTRIBUTE, "true");
+      captureSession.scrollTarget = createScrollTarget();
+      await warmScrollablePage(captureSession.scrollTarget);
+      const positioned = collectPositionedElements();
+      captureSession.fixed = positioned.fixed;
+      captureSession.sticky = positioned.sticky;
+      neutralizeStickyElements();
+      await waitForPageToSettle();
+      const metrics = getTargetMetrics(captureSession.scrollTarget);
+
+      return {
+        capture: getCaptureDescriptor(captureSession.scrollTarget, metrics),
+        metrics,
+        pageUrl: globalThis.location.href,
+        title: document.title,
+      };
+    } catch (error) {
+      await cleanupCapture();
+      throw error;
+    }
+  }
+
+  async function scrollForCapture(segment) {
+    if (!captureSession) {
+      throw new ContentCaptureError(
+        "CAPTURE_NOT_PREPARED",
+        "The page has not been prepared for capture.",
+      );
+    }
+
+    if (
+      !segment ||
+      !Number.isInteger(segment.index) ||
+      !Number.isFinite(segment.x) ||
+      !Number.isFinite(segment.y)
+    ) {
+      throw new ContentCaptureError(
+        "INVALID_SEGMENT",
+        "The requested capture segment is invalid.",
+      );
+    }
+
+    setFixedVisibility(segment.index > 0);
+    const scrollTolerance =
+      0.5 / Math.max(1, globalThis.devicePixelRatio || 1) +
+      SCROLL_FLOAT_EPSILON_CSS_PX;
+    let actual = getTargetScroll(captureSession.scrollTarget);
+    let attempts = 0;
+
+    for (let attempt = 0; attempt < MAX_SCROLL_ATTEMPTS; attempt += 1) {
+      attempts = attempt + 1;
+      setTargetScroll(captureSession.scrollTarget, segment.x, segment.y);
+      await waitForPageToSettle();
+      actual = getTargetScroll(captureSession.scrollTarget);
+
+      if (
+        Math.abs(actual.x - segment.x) <= scrollTolerance &&
+        Math.abs(actual.y - segment.y) <= scrollTolerance
+      ) {
+        break;
+      }
+    }
+
+    if (
+      Math.abs(actual.x - segment.x) > scrollTolerance ||
+      Math.abs(actual.y - segment.y) > scrollTolerance
+    ) {
+      const target = captureSession.scrollTarget;
+      const metrics = getTargetMetrics(target);
+      throw new ContentCaptureError(
+        "SCROLL_POSITION_MISMATCH",
+        "The page did not settle at the requested capture position.",
+        {
+          actualX: actual.x,
+          actualY: actual.y,
+          attempts,
+          connected: target.mode === "window" || target.element.isConnected,
+          maxX: Math.max(0, metrics.documentWidth - metrics.viewportWidth),
+          maxY: Math.max(0, metrics.documentHeight - metrics.viewportHeight),
+          mode: target.mode,
+          requestedX: segment.x,
+          requestedY: segment.y,
+        },
+      );
+    }
+
+    const metrics = getTargetMetrics(captureSession.scrollTarget);
+    return {
+      actualX: actual.x,
+      actualY: actual.y,
+      capture: getCaptureDescriptor(captureSession.scrollTarget, metrics),
+      metrics,
+    };
+  }
+
+  async function cleanupCapture() {
+    if (!captureSession) {
+      return { cleaned: true };
+    }
+
+    const session = captureSession;
+    const root = document.documentElement;
+    const failures = [];
+
+    function attempt(operation) {
+      try {
+        operation();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+
+    attempt(() => setFixedVisibility(false));
+    attempt(() => restoreStickyElements(session));
+    attempt(() => {
+      if (session.scrollTarget && session.scrollTarget.mode === "element") {
+        restoreStyleProperty(
+          session.scrollTarget.element,
+          session.scrollTarget.scrollbarWidth,
+        );
+      }
+    });
+    attempt(() => {
+      if (session.scrollTarget) {
+        setTargetScroll(
+          session.scrollTarget,
+          session.scrollTarget.originalX,
+          session.scrollTarget.originalY,
+        );
+      }
+    });
+    attempt(() => globalThis.scrollTo(session.originalX, session.originalY));
+    attempt(() => {
+      if (session.scrollTarget && session.scrollTarget.mode === "element") {
+        restoreStyleProperty(
+          session.scrollTarget.element,
+          session.scrollTarget.scrollBehavior,
+        );
+        restoreStyleProperty(
+          session.scrollTarget.element,
+          session.scrollTarget.overflowAnchor,
+        );
+        restoreStyleProperty(
+          session.scrollTarget.element,
+          session.scrollTarget.scrollSnapType,
+        );
+      }
+    });
+    attempt(() => {
+      if (session.style && session.style.isConnected) {
+        session.style.remove();
+      }
+    });
+    attempt(() => {
+      if (session.previousCaptureAttribute === null) {
+        root.removeAttribute(CAPTURE_ATTRIBUTE);
+      } else {
+        root.setAttribute(CAPTURE_ATTRIBUTE, session.previousCaptureAttribute);
+      }
+    });
+    captureSession = null;
+
+    if (failures.length > 0) {
+      throw new ContentCaptureError(
+        "CLEANUP_FAILED",
+        "One or more page properties could not be restored.",
+      );
+    }
+
+    return { cleaned: true };
+  }
+
+  async function handleMessage(message) {
+    switch (message && message.type) {
+      case "PREPARE_CAPTURE":
+        return prepareCapture();
+      case "SCROLL_CAPTURE":
+        return scrollForCapture(message.segment);
+      case "CLEANUP_CAPTURE":
+        return cleanupCapture();
+      default:
+        throw new ContentCaptureError("UNKNOWN_MESSAGE", "Unknown capture command.");
+    }
+  }
+
+  browser.runtime.onMessage.addListener((message) =>
+    handleMessage(message)
+      .then((value) => ({ ok: true, value }))
+      .catch((error) => ({
+        ok: false,
+        error: {
+          code: error && error.code ? error.code : "CONTENT_CAPTURE_FAILED",
+          details: error && error.details ? error.details : undefined,
+        },
+      })),
+  );
+})();

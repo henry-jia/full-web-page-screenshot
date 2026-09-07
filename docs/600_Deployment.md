@@ -1,0 +1,64 @@
+# Deployment
+
+## Local development
+
+Load `extension/manifest.json` from Firefox's `about:debugging#/runtime/this-firefox` page.
+
+## Release verification
+
+Run all checks before packaging:
+
+```powershell
+npm test
+npm run check
+```
+
+Perform one manual Firefox capture on a long page with a nested scroll container. Confirm that the PNG reaches the bottom and that the page returns to its original scroll position.
+
+## Deterministic packaging
+
+```powershell
+npm run build
+```
+
+The script reads the version from `extension/manifest.json` and creates:
+
+- `dist/full-web-page-screenshot-<version>.zip`
+- `dist/full-web-page-screenshot-<version>.zip.sha256`
+
+The archive contains the contents of `extension/` with `manifest.json` at the archive root. `dist/` remains untracked.
+
+## GitHub publication
+
+The target public source repository is `henry-jia/full-web-page-screenshot`.
+
+1. Commit only reviewed source and documentation; exclude `dist/`, credentials, local settings, and private screenshots.
+2. Tag the reviewed commit as `v<version>`.
+3. Create a GitHub Release from that tag.
+4. Attach the ZIP and SHA-256 checksum.
+5. Describe the ZIP as the AMO submission package, not a directly installable unsigned XPI.
+
+## Firefox Add-ons publication
+
+1. Submit the release ZIP through the [AMO Developer Hub](https://addons.mozilla.org/developers/).
+2. Select public listing on AMO and Firefox Desktop compatibility.
+3. Confirm that the add-on ID is `full-web-page-screenshot@henry-jia.github.io`. Stop if AMO reports an ID conflict.
+4. The code is plain and unminified; select that no separate source package is required.
+5. Use the listing copy and reviewer notes from `docs/AMO_LISTING.md`.
+6. Declare no data collection. The manifest already specifies `data_collection_permissions.required = ["none"]`.
+7. Select Mozilla Public License 2.0 (MPL-2.0) and submit the version for Mozilla signing and review.
+8. After approval, add the AMO URL to all READMEs. If AMO provides a signed XPI for download, attach it to the matching GitHub Release without replacing the source ZIP.
+
+## Installation channels
+
+- **AMO**: preferred for normal Firefox users and automatic updates.
+- **Signed XPI**: suitable for controlled self-distribution after Mozilla signing.
+- **Temporary load**: development only; removed when Firefox restarts.
+
+## Publication status
+
+- 2026-09-07: version 0.1.0 submitted to the AMO self-distribution (unlisted) channel and approved with 0 errors, 0 warnings. The Mozilla-signed XPI is installed directly and attached to the GitHub `v0.1.0` release. No public AMO listing exists yet; submit a listed version later if public distribution is wanted.
+
+## Rollback
+
+Do not delete or rewrite a published Git tag. If a release has a defect, correct it in a new version and use AMO's version rollback or upload workflow as appropriate.
