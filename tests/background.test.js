@@ -425,6 +425,84 @@ test("terminal viewport overlap is cropped before drawing to the canvas", async 
   assert.deepEqual(drawCalls[1].slice(1), [0, 300, 800, 300, 0, 600, 800, 300]);
 });
 
+test("a sub-pixel scroll shortfall is stitched at the actual scroll position", async () => {
+  const drawCalls = [];
+  const context2d = {
+    imageSmoothingEnabled: true,
+    drawImage(...args) {
+      drawCalls.push(args);
+    },
+    fillRect() {},
+  };
+  const canvas = {
+    width: 0,
+    height: 0,
+    getContext() {
+      return context2d;
+    },
+    toBlob(callback) {
+      callback({ type: "image/png" });
+    },
+  };
+  class LoadedImage {
+    constructor() {
+      this.naturalWidth = 800;
+      this.naturalHeight = 600;
+    }
+    set src(_value) {
+      Promise.resolve().then(() => this.onload());
+    }
+  }
+  const tab = { id: 71, windowId: 2, active: true, url: "https://example.test/" };
+  const metrics = {
+    documentWidth: 800,
+    documentHeight: 900,
+    viewportWidth: 800,
+    viewportHeight: 600,
+    devicePixelRatio: 1.5,
+  };
+  const harness = createBackgroundHarness({
+    tab,
+    captureVisibleTab: async () => "data:image/png;base64,fixture",
+    documentApi: { createElement: () => canvas },
+    ImageClass: LoadedImage,
+    sendMessage: async (_tabId, message) => {
+      if (message.type === "PREPARE_CAPTURE") {
+        return { ok: true, value: { metrics, pageUrl: tab.url, title: "Example" } };
+      }
+      if (message.type === "SCROLL_CAPTURE") {
+        const actualY = message.segment.y > 0
+          ? message.segment.y - 0.5
+          : message.segment.y;
+        return {
+          ok: true,
+          value: { actualX: message.segment.x, actualY, metrics },
+        };
+      }
+      if (message.type === "CLEANUP_CAPTURE") {
+        return { ok: true, value: { cleaned: true } };
+      }
+      throw new Error(`Unexpected command: ${message.type}`);
+    },
+    timer(callback) {
+      callback();
+      return 1;
+    },
+    urlApi: {
+      createObjectURL: () => "blob:fixture",
+      revokeObjectURL() {},
+    },
+  });
+
+  await harness.sendRuntimeMessage({ type: "START_CAPTURE", tabId: tab.id });
+  const state = await waitForTerminalState(harness, tab.id);
+
+  assert.equal(state.status, "success");
+  assert.equal(drawCalls.length, 2);
+  assert.deepEqual(drawCalls[0].slice(1), [0, 0, 800, 600, 0, 0, 800, 600]);
+  assert.deepEqual(drawCalls[1].slice(1), [0, 301, 800, 299, 0, 600, 800, 300]);
+});
+
 test("a nested scroller keeps the outer viewport and stitches only its frame", async () => {
   const drawCalls = [];
   const fillCalls = [];

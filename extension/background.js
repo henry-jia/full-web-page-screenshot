@@ -461,6 +461,13 @@
   async function captureSegments(tab, plan, capture) {
     let stitcher = null;
     let lastCaptureTime = 0;
+    const descriptor = normalizeCaptureDescriptor(plan, capture);
+    const sourceBoundWidth = descriptor.frame
+      ? descriptor.frame.width
+      : descriptor.bitmapViewportWidth;
+    const sourceBoundHeight = descriptor.frame
+      ? descriptor.frame.height
+      : descriptor.bitmapViewportHeight;
 
     for (const segment of plan.segments) {
       const remainingDelay = CAPTURE_INTERVAL_MS - (Date.now() - lastCaptureTime);
@@ -487,7 +494,17 @@
       if (!stitcher) {
         stitcher = createStitcher(plan, image, capture);
       }
-      drawSegment(stitcher, image, segment);
+      drawSegment(
+        stitcher,
+        image,
+        CapturePlan.adjustSegmentForScroll(
+          segment,
+          scrolled.actualX,
+          scrolled.actualY,
+          sourceBoundWidth,
+          sourceBoundHeight,
+        ),
+      );
 
       updateCaptureState(tab.id, {
         status: "capturing",

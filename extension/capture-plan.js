@@ -340,6 +340,76 @@
     });
   }
 
+  function adjustSegmentForScroll(
+    segment,
+    actualX,
+    actualY,
+    viewportWidth,
+    viewportHeight,
+  ) {
+    if (!segment || typeof segment !== "object") {
+      throw new CapturePlanError("INVALID_SEGMENT", "A capture segment is required.");
+    }
+
+    for (const field of ["x", "y", "sourceX", "sourceY", "destinationX", "destinationY"]) {
+      if (!Number.isFinite(segment[field])) {
+        throw new CapturePlanError(
+          "INVALID_SEGMENT",
+          `${field} must be a finite number.`,
+        );
+      }
+    }
+    requirePositiveFinite(segment.width, "width");
+    requirePositiveFinite(segment.height, "height");
+    requirePositiveFinite(viewportWidth, "viewportWidth");
+    requirePositiveFinite(viewportHeight, "viewportHeight");
+    if (!Number.isFinite(actualX) || !Number.isFinite(actualY)) {
+      throw new CapturePlanError(
+        "INVALID_SEGMENT",
+        "The actual scroll position must be finite.",
+      );
+    }
+
+    const deltaX = actualX - segment.x;
+    const deltaY = actualY - segment.y;
+
+    if (deltaX === 0 && deltaY === 0) {
+      return segment;
+    }
+
+    let sourceX = segment.sourceX - deltaX;
+    let sourceY = segment.sourceY - deltaY;
+    let destinationX = segment.destinationX;
+    let destinationY = segment.destinationY;
+    let width = segment.width;
+    let height = segment.height;
+
+    if (sourceX < 0) {
+      destinationX -= sourceX;
+      width += sourceX;
+      sourceX = 0;
+    }
+    if (sourceY < 0) {
+      destinationY -= sourceY;
+      height += sourceY;
+      sourceY = 0;
+    }
+    width = Math.min(width, viewportWidth - sourceX);
+    height = Math.min(height, viewportHeight - sourceY);
+
+    return Object.freeze({
+      index: segment.index,
+      x: actualX,
+      y: actualY,
+      sourceX,
+      sourceY,
+      destinationX,
+      destinationY,
+      width: Math.max(0, width),
+      height: Math.max(0, height),
+    });
+  }
+
   function createFilename(pageUrl, timestamp = new Date()) {
     let host = "web-page";
 
@@ -367,6 +437,7 @@
   return Object.freeze({
     CapturePlanError,
     DEFAULT_LIMITS,
+    adjustSegmentForScroll,
     buildAxisSlices,
     buildAxisStops,
     createCapturePlan,

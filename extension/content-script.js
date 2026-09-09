@@ -488,7 +488,7 @@
 
     setFixedVisibility(segment.index > 0);
     const scrollTolerance =
-      0.5 / Math.max(1, globalThis.devicePixelRatio || 1) +
+      1 / Math.max(1, globalThis.devicePixelRatio || 1) +
       SCROLL_FLOAT_EPSILON_CSS_PX;
     let actual = getTargetScroll(captureSession.scrollTarget);
     let attempts = 0;

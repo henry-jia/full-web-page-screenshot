@@ -343,7 +343,7 @@ test("a persistently redirected nested scroll still fails closed", async () => {
   assert.equal(cleaned.ok, true);
 });
 
-test("Firefox half-device-pixel scroll rounding is accepted without widening to a full pixel", async () => {
+test("Firefox device-pixel scroll quantization is accepted up to one physical pixel", async () => {
   const harness = createContentHarness({
     devicePixelRatio: 1.5,
     nestedScroller: true,
@@ -365,9 +365,17 @@ test("Firefox half-device-pixel scroll rounding is accepted without widening to 
     type: "SCROLL_CAPTURE",
     segment: { index: 1, x: 0, y: 500 },
   });
-  assert.equal(onePhysicalPixelResponse.ok, false);
+  assert.equal(onePhysicalPixelResponse.ok, true);
+  assert.equal(onePhysicalPixelResponse.value.actualY, 500 + 1 / 1.5);
+
+  harness.redirectNextNestedScroll(3, 1.5 / 1.5);
+  const beyondOnePixelResponse = await harness.send({
+    type: "SCROLL_CAPTURE",
+    segment: { index: 1, x: 0, y: 500 },
+  });
+  assert.equal(beyondOnePixelResponse.ok, false);
   assert.equal(
-    onePhysicalPixelResponse.error.code,
+    beyondOnePixelResponse.error.code,
     "SCROLL_POSITION_MISMATCH",
   );
 

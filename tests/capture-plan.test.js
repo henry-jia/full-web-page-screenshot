@@ -252,3 +252,103 @@ test("download filenames include a sanitized host and deterministic timestamp", 
     "full-page-xn--fsqu00a.test-2026-08-25T08-09-10Z.png",
   );
 });
+
+test("scroll adjustment returns the segment unchanged when the position is exact", () => {
+  const plan = CapturePlan.createCapturePlan({
+    documentWidth: 1000,
+    documentHeight: 1700,
+    viewportWidth: 1000,
+    viewportHeight: 700,
+    devicePixelRatio: 1,
+  });
+  const segment = plan.segments.at(-1);
+
+  const adjusted = CapturePlan.adjustSegmentForScroll(
+    segment,
+    segment.x,
+    segment.y,
+    1000,
+    700,
+  );
+
+  assert.equal(adjusted, segment);
+});
+
+test("scroll adjustment shifts the source window when the page settles short", () => {
+  const plan = CapturePlan.createCapturePlan({
+    documentWidth: 1000,
+    documentHeight: 1700,
+    viewportWidth: 1000,
+    viewportHeight: 700,
+    devicePixelRatio: 1,
+  });
+  const segment = plan.segments.at(-1);
+
+  const adjusted = CapturePlan.adjustSegmentForScroll(
+    segment,
+    segment.x,
+    segment.y - 0.666,
+    1000,
+    700,
+  );
+
+  assert.equal(adjusted.index, segment.index);
+  assert.equal(adjusted.x, segment.x);
+  assert.equal(adjusted.y, segment.y - 0.666);
+  assert.ok(Math.abs(adjusted.sourceY - (segment.sourceY + 0.666)) < 1e-9);
+  assert.equal(adjusted.destinationY, segment.destinationY);
+  assert.ok(Math.abs(adjusted.height - (segment.height - 0.666)) < 1e-9);
+  assert.ok(adjusted.sourceY + adjusted.height <= 700);
+});
+
+test("scroll adjustment clips the leading edge when the page settles past the target", () => {
+  const plan = CapturePlan.createCapturePlan({
+    documentWidth: 1000,
+    documentHeight: 1700,
+    viewportWidth: 1000,
+    viewportHeight: 700,
+    devicePixelRatio: 1,
+  });
+  const segment = plan.segments[1];
+
+  const adjusted = CapturePlan.adjustSegmentForScroll(
+    segment,
+    segment.x,
+    segment.y + 0.5,
+    1000,
+    700,
+  );
+
+  assert.equal(adjusted.sourceY, 0);
+  assert.ok(Math.abs(adjusted.destinationY - (segment.destinationY + 0.5)) < 1e-9);
+  assert.ok(Math.abs(adjusted.height - (segment.height - 0.5)) < 1e-9);
+});
+
+test("scroll adjustment rejects invalid geometry", () => {
+  assert.throws(
+    () => CapturePlan.adjustSegmentForScroll(null, 0, 0, 100, 100),
+    (error) => error.code === "INVALID_SEGMENT",
+  );
+  assert.throws(
+    () =>
+      CapturePlan.adjustSegmentForScroll(
+        { x: 0, y: 0, sourceX: 0, sourceY: 0, destinationX: 0, destinationY: 0, width: 0, height: 10 },
+        0,
+        0,
+        100,
+        100,
+      ),
+    (error) => error.code === "INVALID_GEOMETRY",
+  );
+  assert.throws(
+    () =>
+      CapturePlan.adjustSegmentForScroll(
+        { x: 0, y: 0, sourceX: 0, sourceY: 0, destinationX: 0, destinationY: 0, width: 10, height: 10 },
+        Number.NaN,
+        0,
+        100,
+        100,
+      ),
+    (error) => error.code === "INVALID_SEGMENT",
+  );
+});
