@@ -17,6 +17,7 @@ function createBackgroundHarness({
   captureVisibleTab,
   documentApi = {},
   download = async () => 1,
+  executeScript = async () => [],
   getTab,
   ImageClass = class Image {},
   queryTabs,
@@ -36,7 +37,7 @@ function createBackgroundHarness({
     },
     tabs: {
       get: getTab || (async () => tab),
-      executeScript: async () => [],
+      executeScript,
       query: queryTabs || (async () => [tab]),
       captureVisibleTab,
       sendMessage,
@@ -107,6 +108,51 @@ test("unsupported browser pages fail without injecting a content script", async 
   assert.equal(state.status, "error");
   assert.equal(state.errorCode, "UNSUPPORTED_PAGE");
   assert.equal(contentMessages, 0);
+});
+
+test("restricted Mozilla domains fail with a clear message before script injection", async () => {
+  let injectionAttempts = 0;
+  const tab = {
+    id: 72,
+    windowId: 2,
+    active: true,
+    url: "https://addons.mozilla.org/en-US/developers/",
+  };
+  const harness = createBackgroundHarness({
+    tab,
+    captureVisibleTab: async () => "unused",
+    executeScript: async () => {
+      injectionAttempts += 1;
+      return [];
+    },
+    sendMessage: async () => ({ ok: true, value: {} }),
+  });
+
+  await harness.sendRuntimeMessage({ type: "START_CAPTURE", tabId: tab.id });
+  const state = await waitForTerminalState(harness, tab.id);
+
+  assert.equal(state.status, "error");
+  assert.equal(state.errorCode, "RESTRICTED_PAGE");
+  assert.match(state.message, /官方網域/);
+  assert.equal(injectionAttempts, 0);
+});
+
+test("a refused content-script injection reports CONTENT_SCRIPT_UNAVAILABLE", async () => {
+  const tab = { id: 73, windowId: 2, active: true, url: "https://example.test/" };
+  const harness = createBackgroundHarness({
+    tab,
+    captureVisibleTab: async () => "unused",
+    executeScript: async () => {
+      throw new Error("Missing host permission for the tab");
+    },
+    sendMessage: async () => ({ ok: true, value: {} }),
+  });
+
+  await harness.sendRuntimeMessage({ type: "START_CAPTURE", tabId: tab.id });
+  const state = await waitForTerminalState(harness, tab.id);
+
+  assert.equal(state.status, "error");
+  assert.equal(state.errorCode, "CONTENT_SCRIPT_UNAVAILABLE");
 });
 
 test("scroll mismatch diagnostics reach the user-facing capture state", async () => {

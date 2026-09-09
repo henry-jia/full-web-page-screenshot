@@ -4,6 +4,21 @@
   const captureStates = new Map();
   const closedTabIds = new Set();
   const CAPTURE_INTERVAL_MS = 550;
+  const RESTRICTED_HOSTS = new Set([
+    "accounts-static.cdn.mozilla.net",
+    "accounts.firefox.com",
+    "addons.cdn.mozilla.net",
+    "addons.mozilla.org",
+    "api.accounts.firefox.com",
+    "content.cdn.mozilla.net",
+    "discovery.addons.mozilla.org",
+    "install.mozilla.org",
+    "oauth.accounts.firefox.com",
+    "profile.accounts.firefox.com",
+    "support.mozilla.org",
+    "sync.services.mozilla.com",
+    "testpilot.firefox.com",
+  ]);
 
   class CaptureError extends Error {
     constructor(code, message, details) {
@@ -41,6 +56,7 @@
   function userMessageFor(error) {
     const messages = {
       UNSUPPORTED_PAGE: "Firefox 不允許擷取這個頁面；請改用一般網站分頁。",
+      RESTRICTED_PAGE: "Firefox 出於安全考量，禁止所有擴充功能在 addons.mozilla.org 等官方網域運作；請改用一般網站分頁。",
       CONTENT_SCRIPT_UNAVAILABLE: "無法讀取目前頁面；請重新載入一般網站後再試。",
       TAB_NOT_ACTIVE: "擷取期間分頁已切換。請保持目標分頁在前景後重試。",
       PAGE_SIZE_CHANGED: "頁面在擷取期間持續改變尺寸，為避免裁切已停止。",
@@ -530,7 +546,22 @@
         throw new CaptureError("UNSUPPORTED_PAGE", "Only HTTP and HTTPS pages are supported.");
       }
 
-      await browser.tabs.executeScript(tab.id, { file: "/content-script.js" });
+      const hostMatch = /^https?:\/\/([a-z0-9.-]+)/i.exec(tab.url);
+      if (hostMatch && RESTRICTED_HOSTS.has(hostMatch[1].toLowerCase())) {
+        throw new CaptureError(
+          "RESTRICTED_PAGE",
+          "Firefox blocks extensions on this restricted domain.",
+        );
+      }
+
+      try {
+        await browser.tabs.executeScript(tab.id, { file: "/content-script.js" });
+      } catch {
+        throw new CaptureError(
+          "CONTENT_SCRIPT_UNAVAILABLE",
+          "Firefox refused to inject the content script into this page.",
+        );
+      }
       const preparedPage = await sendToContent(tab.id, { type: "PREPARE_CAPTURE" });
       prepared = true;
       const plan = CapturePlan.createCapturePlan(preparedPage.metrics);

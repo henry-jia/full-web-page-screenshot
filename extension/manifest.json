@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Full Web Page Screenshot",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Capture the complete scrollable area of the active page as a local PNG.",
   "permissions": [
     "activeTab",
