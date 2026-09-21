@@ -2,6 +2,7 @@
   "use strict";
 
   const captureButton = document.getElementById("capture-button");
+  const regionButton = document.getElementById("region-button");
   const statusPanel = document.getElementById("status-panel");
   const statusLabel = document.getElementById("status-label");
   const statusMessage = document.getElementById("status-message");
@@ -13,6 +14,7 @@
 
   const statusLabels = {
     idle: "待命",
+    picking: "選取區域",
     capturing: "擷取中",
     encoding: "正在輸出",
     success: "完成",
@@ -20,7 +22,11 @@
   };
 
   function isBusy(state) {
-    return state.status === "capturing" || state.status === "encoding";
+    return (
+      state.status === "capturing" ||
+      state.status === "encoding" ||
+      state.status === "picking"
+    );
   }
 
   function renderState(state) {
@@ -34,7 +40,12 @@
     statusMessage.textContent = state.message || "擷取狀態暫時無法取得。";
     segmentCount.textContent = `${completed} / ${total}`;
     captureButton.disabled = busy;
-    captureButton.textContent = busy ? "擷取進行中" : "擷取完整頁面";
+    captureButton.textContent = state.status === "picking"
+      ? "等待選取區域"
+      : busy
+        ? "擷取進行中"
+        : "擷取完整頁面";
+    regionButton.disabled = busy;
     progressTrack.hidden = !busy || total === 0;
     progressTrack.setAttribute("aria-valuenow", String(progress));
     progressFill.style.width = `${progress}%`;
@@ -98,6 +109,32 @@
     }
   }
 
+  async function startRegionCapture() {
+    if (!Number.isInteger(activeTabId)) {
+      return;
+    }
+
+    regionButton.disabled = true;
+
+    try {
+      const result = await browser.runtime.sendMessage({
+        type: "START_REGION_CAPTURE",
+        tabId: activeTabId,
+      });
+      renderState(result.state);
+      if (result.accepted || isBusy(result.state)) {
+        beginPolling();
+      }
+    } catch (error) {
+      renderState({
+        status: "error",
+        completed: 0,
+        total: 0,
+        message: "無法啟動區域選取。請重新載入頁面後再試。",
+      });
+    }
+  }
+
   async function initialize() {
     try {
       const tabs = await browser.tabs.query({ active: true, currentWindow: true });
@@ -126,6 +163,7 @@
   }
 
   captureButton.addEventListener("click", startCapture);
+  regionButton.addEventListener("click", startRegionCapture);
   globalThis.addEventListener("unload", () => {
     if (pollTimer !== null) {
       globalThis.clearInterval(pollTimer);

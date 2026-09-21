@@ -1,5 +1,21 @@
 # Change Log
 
+## [20260921] Mirror capture progress to the toolbar badge
+
+- **類型**：Feature
+- **影響範圍**：extension, tests, docs
+- **內容**：區域截取需在頁面點擊、popup 關閉後沒有任何進度回饋；選定區域後現在以 `browserAction.openPopup()` 重新開啟 popup，呈現與整頁截取相同的進度面板，並同步到工具列圖示徽章（選取／百分比／輸出／錯誤 `!`／完成清除）；截取期間被截取區域保留藍色邊框指示（邊框外擴於區域框，不會出現在輸出圖中）；`PAGE_SIZE_CHANGED` 增加前後文件尺寸與區域框診斷；修正區域截取每段 descriptor 漏帶 `region` 模式導致穩定性檢查誤判的 bug；65 項測試通過。
+- **關聯文件**：REQ-20260921-001, 220
+- **操作人**：Kimi Code
+
+## [20260921] Capture a user-selected scrollable sub-region
+
+- **類型**：Feature
+- **影響範圍**：extension, tests, docs
+- **內容**：popup 新增「擷取捲動區域」入口；頁面內 picker 以高亮框即時標出命中的可捲動元素（自動解析最近的可捲動祖先），點擊確認、Esc 取消；選定後先把區域捲入視窗，再沿用既有 element 管線預熱、捲動驗證（含捲動邊緣容差）、fixed/sticky 處理、拼接與安全縮放，輸出裁切到該元素框的單張 PNG（檔名前綴 `region-`）；區域大於視窗或選取後失效時 fail closed；整頁擷取啟動時會先退出選取模式；59 項測試通過。
+- **關聯文件**：REQ-20260921-001, 220
+- **操作人**：Kimi Code
+
 ## [20260921] Bump version to 0.1.6 for the listed AMO channel
 
 - **類型**：Config

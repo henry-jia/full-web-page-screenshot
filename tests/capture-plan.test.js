@@ -253,6 +253,19 @@ test("download filenames include a sanitized host and deterministic timestamp", 
   );
 });
 
+test("download filenames accept a region prefix and reject unsafe prefixes", () => {
+  const timestamp = new Date("2026-09-21T04:00:00Z");
+
+  assert.equal(
+    CapturePlan.createFilename("https://example.test/app", timestamp, "region"),
+    "region-example.test-2026-09-21T04-00-00Z.png",
+  );
+  assert.equal(
+    CapturePlan.createFilename("https://example.test/app", timestamp, "bad prefix!"),
+    "full-page-example.test-2026-09-21T04-00-00Z.png",
+  );
+});
+
 test("scroll adjustment returns the segment unchanged when the position is exact", () => {
   const plan = CapturePlan.createCapturePlan({
     documentWidth: 1000,

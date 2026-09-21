@@ -27,7 +27,23 @@ function createBackgroundHarness({
 }) {
   let messageListener = null;
   let tabRemovedListener = null;
+  const badgeCalls = [];
+  let popupOpenCount = 0;
   const browser = {
+    browserAction: {
+      openPopup() {
+        popupOpenCount += 1;
+        return Promise.resolve();
+      },
+      setBadgeBackgroundColor(details) {
+        badgeCalls.push({ color: details.color, tabId: details.tabId });
+        return Promise.resolve();
+      },
+      setBadgeText(details) {
+        badgeCalls.push({ text: details.text, tabId: details.tabId });
+        return Promise.resolve();
+      },
+    },
     runtime: {
       onMessage: {
         addListener(listener) {
@@ -66,11 +82,15 @@ function createBackgroundHarness({
   new vm.Script(backgroundSource, { filename: "background.js" }).runInContext(context);
 
   return {
+    badgeCalls,
+    get popupOpenCount() {
+      return popupOpenCount;
+    },
     removeTab(tabId) {
       tabRemovedListener(tabId);
     },
-    sendRuntimeMessage(message) {
-      return messageListener(message);
+    sendRuntimeMessage(message, sender) {
+      return messageListener(message, sender);
     },
   };
 }
@@ -1034,4 +1054,591 @@ test("an in-flight capture cannot recreate state after its tab closes", async ()
   });
 
   assert.equal(state.status, "idle");
+});
+
+test("a region capture crops to the picked element frame after the user picks it", async () => {
+  const drawCalls = [];
+  const fillCalls = [];
+  const contentMessages = [];
+  const context2d = {
+    fillStyle: "",
+    imageSmoothingEnabled: true,
+    drawImage(...args) {
+      drawCalls.push(args);
+    },
+    fillRect(...args) {
+      fillCalls.push(args);
+    },
+  };
+  const canvas = {
+    width: 0,
+    height: 0,
+    getContext() {
+      return context2d;
+    },
+    toBlob(callback) {
+      callback({ type: "image/png" });
+    },
+  };
+  class LoadedImage {
+    constructor() {
+      this.naturalWidth = 800;
+      this.naturalHeight = 600;
+    }
+    set src(_value) {
+      Promise.resolve().then(() => this.onload());
+    }
+  }
+  const tab = { id: 80, windowId: 2, active: true, url: "https://example.test/app" };
+  const metrics = {
+    documentWidth: 600,
+    documentHeight: 1500,
+    viewportWidth: 600,
+    viewportHeight: 500,
+    devicePixelRatio: 1,
+  };
+  const capture = {
+    backgroundColor: "rgb(4, 12, 15)",
+    bitmapViewportHeight: 600,
+    bitmapViewportWidth: 800,
+    frame: { x: 200, y: 100, width: 600, height: 500 },
+    mode: "region",
+    outputHeight: 1500,
+    outputWidth: 600,
+  };
+  const harness = createBackgroundHarness({
+    tab,
+    captureVisibleTab: async () => "data:image/png;base64,fixture",
+    documentApi: { createElement: () => canvas },
+    ImageClass: LoadedImage,
+    sendMessage: async (_tabId, message) => {
+      contentMessages.push(message.type);
+      if (message.type === "ENTER_REGION_PICKER") {
+        return { ok: true, value: { active: true } };
+      }
+      if (message.type === "PREPARE_REGION_CAPTURE") {
+        return {
+          ok: true,
+          value: { capture, metrics, pageUrl: tab.url, title: "App" },
+        };
+      }
+      if (message.type === "SCROLL_CAPTURE") {
+        return {
+          ok: true,
+          value: {
+            actualX: message.segment.x,
+            actualY: message.segment.y,
+            capture,
+            metrics,
+          },
+        };
+      }
+      if (message.type === "CLEANUP_CAPTURE") {
+        return { ok: true, value: { cleaned: true } };
+      }
+      throw new Error(`Unexpected command: ${message.type}`);
+    },
+    timer(callback) {
+      callback();
+      return 1;
+    },
+    urlApi: {
+      createObjectURL: () => "blob:fixture",
+      revokeObjectURL() {},
+    },
+  });
+
+  const started = await harness.sendRuntimeMessage({
+    type: "START_REGION_CAPTURE",
+    tabId: tab.id,
+  });
+  assert.equal(started.accepted, true);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const picking = await harness.sendRuntimeMessage({
+    type: "GET_CAPTURE_STATE",
+    tabId: tab.id,
+  });
+  assert.equal(picking.status, "picking");
+  assert.deepEqual(contentMessages, ["ENTER_REGION_PICKER"]);
+
+  const picked = await harness.sendRuntimeMessage(
+    { type: "REGION_PICKED" },
+    { tab: { id: tab.id } },
+  );
+  assert.equal(picked.accepted, true);
+  assert.equal(harness.popupOpenCount, 1);
+  const state = await waitForTerminalState(harness, tab.id);
+
+  assert.equal(state.status, "success");
+  assert.match(state.message, /區域截圖已儲存/);
+  assert.match(state.filename, /^region-example\.test-/);
+  assert.equal(canvas.width, 600);
+  assert.equal(canvas.height, 1500);
+  assert.deepEqual(fillCalls, [[0, 0, 600, 1500]]);
+  assert.equal(drawCalls.length, 3);
+  assert.ok(drawCalls.every((call) => call.length === 9));
+  assert.deepEqual(drawCalls[0].slice(1), [200, 100, 600, 500, 0, 0, 600, 500]);
+  assert.deepEqual(drawCalls[1].slice(1), [200, 100, 600, 500, 0, 500, 600, 500]);
+  assert.deepEqual(drawCalls[2].slice(1), [200, 100, 600, 500, 0, 1000, 600, 500]);
+  assert.deepEqual(contentMessages, [
+    "ENTER_REGION_PICKER",
+    "PREPARE_REGION_CAPTURE",
+    "SCROLL_CAPTURE",
+    "SCROLL_CAPTURE",
+    "SCROLL_CAPTURE",
+    "CLEANUP_CAPTURE",
+  ]);
+});
+
+test("region picking can be cancelled and returns to idle", async () => {
+  const contentMessages = [];
+  const tab = { id: 81, windowId: 2, active: true, url: "https://example.test/" };
+  const harness = createBackgroundHarness({
+    tab,
+    captureVisibleTab: async () => {
+      throw new Error("A cancelled picker must not capture.");
+    },
+    sendMessage: async (_tabId, message) => {
+      contentMessages.push(message.type);
+      if (message.type === "ENTER_REGION_PICKER") {
+        return { ok: true, value: { active: true } };
+      }
+      throw new Error(`Unexpected command: ${message.type}`);
+    },
+  });
+
+  await harness.sendRuntimeMessage({ type: "START_REGION_CAPTURE", tabId: tab.id });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const cancelled = await harness.sendRuntimeMessage(
+    { type: "REGION_PICK_CANCELLED" },
+    { tab: { id: tab.id } },
+  );
+
+  assert.equal(cancelled.dismissed, true);
+  assert.equal(harness.popupOpenCount, 0);
+  const state = await harness.sendRuntimeMessage({
+    type: "GET_CAPTURE_STATE",
+    tabId: tab.id,
+  });
+  assert.equal(state.status, "idle");
+  assert.match(state.message, /已取消區域選取/);
+  assert.deepEqual(contentMessages, ["ENTER_REGION_PICKER"]);
+});
+
+test("a picked region without an active picker is ignored", async () => {
+  const tab = { id: 82, windowId: 2, active: true, url: "https://example.test/" };
+  const harness = createBackgroundHarness({
+    tab,
+    captureVisibleTab: async () => "unused",
+    sendMessage: async () => {
+      throw new Error("No content command is expected without a picker.");
+    },
+  });
+
+  const picked = await harness.sendRuntimeMessage(
+    { type: "REGION_PICKED" },
+    { tab: { id: tab.id } },
+  );
+  assert.equal(picked.accepted, false);
+  const state = await harness.sendRuntimeMessage({
+    type: "GET_CAPTURE_STATE",
+    tabId: tab.id,
+  });
+  assert.equal(state.status, "idle");
+});
+
+test("starting a full-page capture exits an active picker first", async () => {
+  const contentMessages = [];
+  const context2d = {
+    imageSmoothingEnabled: true,
+    drawImage() {},
+    fillRect() {},
+  };
+  const canvas = {
+    width: 0,
+    height: 0,
+    getContext() {
+      return context2d;
+    },
+    toBlob(callback) {
+      callback({ type: "image/png" });
+    },
+  };
+  class LoadedImage {
+    constructor() {
+      this.naturalWidth = 800;
+      this.naturalHeight = 600;
+    }
+    set src(_value) {
+      Promise.resolve().then(() => this.onload());
+    }
+  }
+  const tab = { id: 83, windowId: 2, active: true, url: "https://example.test/" };
+  const metrics = {
+    documentWidth: 800,
+    documentHeight: 600,
+    viewportWidth: 800,
+    viewportHeight: 600,
+    devicePixelRatio: 1,
+  };
+  const harness = createBackgroundHarness({
+    tab,
+    captureVisibleTab: async () => "data:image/png;base64,fixture",
+    documentApi: { createElement: () => canvas },
+    ImageClass: LoadedImage,
+    sendMessage: async (_tabId, message) => {
+      contentMessages.push(message.type);
+      if (message.type === "ENTER_REGION_PICKER") {
+        return { ok: true, value: { active: true } };
+      }
+      if (message.type === "EXIT_REGION_PICKER") {
+        return { ok: true, value: { active: false } };
+      }
+      if (message.type === "PREPARE_CAPTURE") {
+        return { ok: true, value: { metrics, pageUrl: tab.url, title: "Example" } };
+      }
+      if (message.type === "SCROLL_CAPTURE") {
+        return { ok: true, value: { actualX: 0, actualY: 0, metrics } };
+      }
+      if (message.type === "CLEANUP_CAPTURE") {
+        return { ok: true, value: { cleaned: true } };
+      }
+      throw new Error(`Unexpected command: ${message.type}`);
+    },
+    timer(callback) {
+      callback();
+      return 1;
+    },
+    urlApi: {
+      createObjectURL: () => "blob:fixture",
+      revokeObjectURL() {},
+    },
+  });
+
+  await harness.sendRuntimeMessage({ type: "START_REGION_CAPTURE", tabId: tab.id });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await harness.sendRuntimeMessage({ type: "START_CAPTURE", tabId: tab.id });
+  const state = await waitForTerminalState(harness, tab.id);
+
+  assert.equal(state.status, "success");
+  assert.deepEqual(contentMessages.slice(0, 3), [
+    "ENTER_REGION_PICKER",
+    "EXIT_REGION_PICKER",
+    "PREPARE_CAPTURE",
+  ]);
+});
+
+test("a region target rejected at prepare time reports a region error without cleanup", async () => {
+  const contentMessages = [];
+  const tab = { id: 84, windowId: 2, active: true, url: "https://example.test/app" };
+  const harness = createBackgroundHarness({
+    tab,
+    captureVisibleTab: async () => {
+      throw new Error("A rejected region must not be captured.");
+    },
+    sendMessage: async (_tabId, message) => {
+      contentMessages.push(message.type);
+      if (message.type === "ENTER_REGION_PICKER") {
+        return { ok: true, value: { active: true } };
+      }
+      if (message.type === "PREPARE_REGION_CAPTURE") {
+        return { ok: false, error: { code: "REGION_TARGET_INVALID" } };
+      }
+      if (message.type === "CLEANUP_CAPTURE") {
+        return { ok: true, value: { cleaned: true } };
+      }
+      throw new Error(`Unexpected command: ${message.type}`);
+    },
+  });
+
+  await harness.sendRuntimeMessage({ type: "START_REGION_CAPTURE", tabId: tab.id });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await harness.sendRuntimeMessage(
+    { type: "REGION_PICKED" },
+    { tab: { id: tab.id } },
+  );
+  const state = await waitForTerminalState(harness, tab.id);
+
+  assert.equal(state.status, "error");
+  assert.equal(state.errorCode, "REGION_TARGET_INVALID");
+  assert.match(state.message, /重新選取/);
+  assert.deepEqual(contentMessages, [
+    "ENTER_REGION_PICKER",
+    "PREPARE_REGION_CAPTURE",
+  ]);
+});
+
+test("page size changes include before and after geometry in the user message", async () => {
+  const context2d = {
+    imageSmoothingEnabled: true,
+    drawImage() {},
+    fillRect() {},
+  };
+  const canvas = {
+    width: 0,
+    height: 0,
+    getContext() {
+      return context2d;
+    },
+    toBlob(callback) {
+      callback({ type: "image/png" });
+    },
+  };
+  class LoadedImage {
+    constructor() {
+      this.naturalWidth = 800;
+      this.naturalHeight = 600;
+    }
+    set src(_value) {
+      Promise.resolve().then(() => this.onload());
+    }
+  }
+  const tab = { id: 85, windowId: 2, active: true, url: "https://example.test/" };
+  const metrics = {
+    documentWidth: 800,
+    documentHeight: 1200,
+    viewportWidth: 800,
+    viewportHeight: 600,
+    devicePixelRatio: 1,
+  };
+  const harness = createBackgroundHarness({
+    tab,
+    captureVisibleTab: async () => "data:image/png;base64,fixture",
+    documentApi: { createElement: () => canvas },
+    ImageClass: LoadedImage,
+    sendMessage: async (_tabId, message) => {
+      if (message.type === "PREPARE_CAPTURE") {
+        return { ok: true, value: { metrics, pageUrl: tab.url, title: "Example" } };
+      }
+      if (message.type === "SCROLL_CAPTURE") {
+        const shifted = message.segment.index === 0
+          ? metrics
+          : { ...metrics, documentHeight: 1250 };
+        return {
+          ok: true,
+          value: { actualX: message.segment.x, actualY: message.segment.y, metrics: shifted },
+        };
+      }
+      if (message.type === "CLEANUP_CAPTURE") {
+        return { ok: true, value: { cleaned: true } };
+      }
+      throw new Error(`Unexpected command: ${message.type}`);
+    },
+    timer(callback) {
+      callback();
+      return 1;
+    },
+    urlApi: {
+      createObjectURL: () => "blob:fixture",
+      revokeObjectURL() {},
+    },
+  });
+
+  await harness.sendRuntimeMessage({ type: "START_CAPTURE", tabId: tab.id });
+  const state = await waitForTerminalState(harness, tab.id);
+
+  assert.equal(state.status, "error");
+  assert.equal(state.errorCode, "PAGE_SIZE_CHANGED");
+  assert.match(state.message, /文件 800 × 1200 → 800 × 1250/);
+  assert.match(state.message, /視窗 800 × 600 → 800 × 600/);
+});
+
+test("a moving capture frame reports before and after frame diagnostics", async () => {
+  const tab = { id: 86, windowId: 2, active: true, url: "https://example.test/app" };
+  const metrics = {
+    documentWidth: 600,
+    documentHeight: 900,
+    viewportWidth: 600,
+    viewportHeight: 400,
+    devicePixelRatio: 1,
+  };
+  const capture = {
+    backgroundColor: "rgb(4, 12, 15)",
+    bitmapViewportHeight: 600,
+    bitmapViewportWidth: 800,
+    frame: { x: 100, y: 100, width: 600, height: 400 },
+    mode: "element",
+    outputHeight: 1100,
+    outputWidth: 800,
+  };
+  const harness = createBackgroundHarness({
+    tab,
+    captureVisibleTab: async () => "data:image/png;base64,fixture",
+    sendMessage: async (_tabId, message) => {
+      if (message.type === "PREPARE_CAPTURE") {
+        return {
+          ok: true,
+          value: { capture, metrics, pageUrl: tab.url, title: "App" },
+        };
+      }
+      if (message.type === "SCROLL_CAPTURE") {
+        return {
+          ok: true,
+          value: {
+            actualX: message.segment.x,
+            actualY: message.segment.y,
+            capture: { ...capture, frame: { ...capture.frame, y: 80.25 } },
+            metrics,
+          },
+        };
+      }
+      if (message.type === "CLEANUP_CAPTURE") {
+        return { ok: true, value: { cleaned: true } };
+      }
+      throw new Error(`Unexpected command: ${message.type}`);
+    },
+  });
+
+  await harness.sendRuntimeMessage({ type: "START_CAPTURE", tabId: tab.id });
+  const state = await waitForTerminalState(harness, tab.id);
+
+  assert.equal(state.status, "error");
+  assert.equal(state.errorCode, "PAGE_SIZE_CHANGED");
+  assert.match(state.message, /區域框 \(100, 100, 600 × 400\) → \(100, 80\.25, 600 × 400\)/);
+});
+
+test("capture progress and completion are mirrored to the toolbar badge", async () => {
+  const context2d = {
+    imageSmoothingEnabled: true,
+    drawImage() {},
+    fillRect() {},
+  };
+  const canvas = {
+    width: 0,
+    height: 0,
+    getContext() {
+      return context2d;
+    },
+    toBlob(callback) {
+      callback({ type: "image/png" });
+    },
+  };
+  class LoadedImage {
+    constructor() {
+      this.naturalWidth = 800;
+      this.naturalHeight = 600;
+    }
+    set src(_value) {
+      Promise.resolve().then(() => this.onload());
+    }
+  }
+  const tab = { id: 87, windowId: 2, active: true, url: "https://example.test/" };
+  const metrics = {
+    documentWidth: 800,
+    documentHeight: 1200,
+    viewportWidth: 800,
+    viewportHeight: 600,
+    devicePixelRatio: 1,
+  };
+  const harness = createBackgroundHarness({
+    tab,
+    captureVisibleTab: async () => "data:image/png;base64,fixture",
+    documentApi: { createElement: () => canvas },
+    ImageClass: LoadedImage,
+    sendMessage: async (_tabId, message) => {
+      if (message.type === "PREPARE_CAPTURE") {
+        return { ok: true, value: { metrics, pageUrl: tab.url, title: "Example" } };
+      }
+      if (message.type === "SCROLL_CAPTURE") {
+        return {
+          ok: true,
+          value: { actualX: message.segment.x, actualY: message.segment.y, metrics },
+        };
+      }
+      if (message.type === "CLEANUP_CAPTURE") {
+        return { ok: true, value: { cleaned: true } };
+      }
+      throw new Error(`Unexpected command: ${message.type}`);
+    },
+    timer(callback) {
+      callback();
+      return 1;
+    },
+    urlApi: {
+      createObjectURL: () => "blob:fixture",
+      revokeObjectURL() {},
+    },
+  });
+
+  await harness.sendRuntimeMessage({ type: "START_CAPTURE", tabId: tab.id });
+  const state = await waitForTerminalState(harness, tab.id);
+
+  assert.equal(state.status, "success");
+  const texts = harness.badgeCalls
+    .filter((call) => Object.prototype.hasOwnProperty.call(call, "text"))
+    .map((call) => call.text);
+  assert.deepEqual(texts, ["…", "0%", "50%", "100%", "輸出", ""]);
+  assert.ok(
+    harness.badgeCalls
+      .filter((call) => Object.prototype.hasOwnProperty.call(call, "color"))
+      .every((call) => call.color === "#3f8f5f"),
+  );
+});
+
+test("the badge shows picking state and clears after cancellation", async () => {
+  const tab = { id: 88, windowId: 2, active: true, url: "https://example.test/" };
+  const harness = createBackgroundHarness({
+    tab,
+    captureVisibleTab: async () => "unused",
+    sendMessage: async (_tabId, message) => {
+      if (message.type === "ENTER_REGION_PICKER") {
+        return { ok: true, value: { active: true } };
+      }
+      throw new Error(`Unexpected command: ${message.type}`);
+    },
+  });
+
+  await harness.sendRuntimeMessage({ type: "START_REGION_CAPTURE", tabId: tab.id });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await harness.sendRuntimeMessage(
+    { type: "REGION_PICK_CANCELLED" },
+    { tab: { id: tab.id } },
+  );
+
+  const texts = harness.badgeCalls
+    .filter((call) => Object.prototype.hasOwnProperty.call(call, "text"))
+    .map((call) => call.text);
+  assert.deepEqual(texts, ["…", "選取", ""]);
+});
+
+test("a failed capture flags the badge with an error mark", async () => {
+  const tab = { id: 89, windowId: 2, active: true, url: "https://example.test/" };
+  const metrics = {
+    documentWidth: 800,
+    documentHeight: 600,
+    viewportWidth: 800,
+    viewportHeight: 600,
+    devicePixelRatio: 1,
+  };
+  const harness = createBackgroundHarness({
+    tab,
+    captureVisibleTab: async () => {
+      throw new Error("Synthetic capture failure.");
+    },
+    sendMessage: async (_tabId, message) => {
+      if (message.type === "PREPARE_CAPTURE") {
+        return { ok: true, value: { metrics, pageUrl: tab.url, title: "Example" } };
+      }
+      if (message.type === "SCROLL_CAPTURE") {
+        return { ok: true, value: { actualX: 0, actualY: 0, metrics } };
+      }
+      if (message.type === "CLEANUP_CAPTURE") {
+        return { ok: true, value: { cleaned: true } };
+      }
+      throw new Error(`Unexpected command: ${message.type}`);
+    },
+  });
+
+  await harness.sendRuntimeMessage({ type: "START_CAPTURE", tabId: tab.id });
+  const state = await waitForTerminalState(harness, tab.id);
+
+  assert.equal(state.status, "error");
+  const texts = harness.badgeCalls
+    .filter((call) => Object.prototype.hasOwnProperty.call(call, "text"))
+    .map((call) => call.text);
+  assert.equal(texts[texts.length - 1], "!");
+  const colors = harness.badgeCalls
+    .filter((call) => Object.prototype.hasOwnProperty.call(call, "color"))
+    .map((call) => call.color);
+  assert.equal(colors[colors.length - 1], "#b33747");
 });

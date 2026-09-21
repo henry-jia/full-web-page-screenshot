@@ -410,7 +410,7 @@
     });
   }
 
-  function createFilename(pageUrl, timestamp = new Date()) {
+  function createFilename(pageUrl, timestamp = new Date(), prefix = "full-page") {
     let host = "web-page";
 
     try {
@@ -431,7 +431,9 @@
       .replace(/\.\d{3}Z$/, "Z")
       .replace(/[:]/g, "-");
 
-    return `full-page-${safeHost}-${safeTimestamp}.png`;
+    const safePrefix = /^[a-z0-9-]+$/.test(prefix) ? prefix : "full-page";
+
+    return `${safePrefix}-${safeHost}-${safeTimestamp}.png`;
   }
 
   return Object.freeze({

@@ -50,7 +50,25 @@ function createContentHarness({
   windowScrollMaxY = Infinity,
 } = {}) {
   const rootAttributes = new Map();
+  const documentListeners = new Map();
+  const windowListeners = new Map();
+  const rootChildren = [];
   const events = [];
+
+  function addListener(map, type, handler) {
+    if (!map.has(type)) {
+      map.set(type, []);
+    }
+    map.get(type).push(handler);
+  }
+
+  function removeListener(map, type, handler) {
+    const list = map.get(type) || [];
+    const index = list.indexOf(handler);
+    if (index >= 0) {
+      list.splice(index, 1);
+    }
+  }
   const frame = {
     bottom: 600,
     height: 500,
@@ -121,6 +139,11 @@ function createContentHarness({
     scrollHeight: rootScrollHeight,
     offsetHeight: rootScrollHeight,
     clientHeight: 600,
+    appendChild(element) {
+      element.isConnected = true;
+      rootChildren.push(element);
+      return element;
+    },
     getAttribute(name) {
       return rootAttributes.has(name) ? rootAttributes.get(name) : null;
     },
@@ -143,6 +166,12 @@ function createContentHarness({
     documentElement: root,
     body,
     title: "Fixture",
+    addEventListener(type, handler) {
+      addListener(documentListeners, type, handler);
+    },
+    removeEventListener(type, handler) {
+      removeListener(documentListeners, type, handler);
+    },
     head: {
       appendChild(element) {
         styleElement = element;
@@ -159,6 +188,8 @@ function createContentHarness({
         id: "",
         textContent: "",
         isConnected: false,
+        parentElement: null,
+        style: {},
         remove() {
           this.isConnected = false;
           events.push("capture-style:remove");
@@ -175,6 +206,10 @@ function createContentHarness({
         addListener(listener) {
           messageListener = listener;
         },
+      },
+      sendMessage(message) {
+        events.push(`runtime:${message && message.type}`);
+        return Promise.resolve({ accepted: true });
       },
     },
   };
@@ -202,14 +237,35 @@ function createContentHarness({
     setTimeout(callback) {
       callback();
     },
+    addEventListener(type, handler) {
+      addListener(windowListeners, type, handler);
+    },
+    removeEventListener(type, handler) {
+      removeListener(windowListeners, type, handler);
+    },
+    scrollBy(dx, dy) {
+      events.push(`windowScrollBy:${dx},${dy}`);
+      context.scrollX += dx;
+      context.scrollY += dy;
+      frame.left -= dx;
+      frame.right -= dx;
+      frame.top -= dy;
+      frame.bottom -= dy;
+    },
     scrollTo(x, y) {
       events.push(`windowScroll:${x},${y}`);
       const shouldRedirect = redirectScroll || windowRedirectsRemaining > 0;
       if (windowRedirectsRemaining > 0) {
         windowRedirectsRemaining -= 1;
       }
-      context.scrollX = shouldRedirect ? x + 10 : x;
-      context.scrollY = Math.min(y, windowScrollMaxY);
+      const nextX = shouldRedirect ? x + 10 : x;
+      const nextY = Math.min(y, windowScrollMaxY);
+      frame.left -= nextX - context.scrollX;
+      frame.right -= nextX - context.scrollX;
+      frame.top -= nextY - context.scrollY;
+      frame.bottom -= nextY - context.scrollY;
+      context.scrollX = nextX;
+      context.scrollY = nextY;
     },
   });
   context.globalThis = context;
@@ -220,8 +276,19 @@ function createContentHarness({
     events,
     fixed,
     frame,
+    rootChildren,
     scroller,
     sticky,
+    dispatch(type, event) {
+      for (const handler of documentListeners.get(type) || []) {
+        handler(event);
+      }
+    },
+    dispatchWindow(type, event) {
+      for (const handler of windowListeners.get(type) || []) {
+        handler(event);
+      }
+    },
     redirectNextNestedScroll(attempts = 1, offset = 10) {
       nestedRedirectsRemaining = attempts;
       nestedRedirectOffset = offset;
@@ -564,5 +631,190 @@ test("nested warmup traverses horizontal overflow before capture", async () => {
   assert.equal(prepared.value.metrics.documentWidth, 900);
   assert.ok(harness.events.includes("scrollLeft:300"));
   assert.equal(harness.scroller.scrollLeft, 0);
+  await harness.send({ type: "CLEANUP_CAPTURE" });
+});
+
+test("region picker highlights the scrollable ancestor and region prepare crops to its frame", async () => {
+  const harness = createContentHarness({ nestedScroller: true });
+  const entered = await harness.send({ type: "ENTER_REGION_PICKER" });
+  assert.equal(entered.ok, true);
+  assert.equal(entered.value.active, true);
+
+  const child = { parentElement: harness.scroller };
+  harness.dispatch("mousemove", { target: child });
+  const highlight = harness.rootChildren[harness.rootChildren.length - 1];
+  assert.equal(highlight.id, "__fwps-region-picker-highlight");
+  assert.equal(highlight.style.display, "block");
+  assert.equal(highlight.style.left, "200px");
+  assert.equal(highlight.style.top, "100px");
+  assert.equal(highlight.style.width, "600px");
+  assert.equal(highlight.style.height, "500px");
+
+  harness.dispatch("click", {
+    target: child,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  assert.ok(harness.events.includes("runtime:REGION_PICKED"));
+  assert.equal(highlight.isConnected, false);
+
+  const prepared = await harness.send({ type: "PREPARE_REGION_CAPTURE" });
+  assert.equal(prepared.ok, true);
+  assert.equal(prepared.value.capture.mode, "region");
+  assert.equal(prepared.value.capture.outputWidth, 600);
+  assert.equal(prepared.value.capture.outputHeight, 1500);
+  assert.deepEqual(JSON.parse(JSON.stringify(prepared.value.capture.frame)), {
+    x: 200,
+    y: 100,
+    width: 600,
+    height: 500,
+  });
+  assert.equal(prepared.value.metrics.documentHeight, 1500);
+  assert.equal(prepared.value.metrics.viewportHeight, 500);
+
+  const indicator = harness.rootChildren[harness.rootChildren.length - 1];
+  assert.equal(indicator.id, "__fwps-region-frame");
+  assert.equal(indicator.style.boxSizing, "border-box");
+  assert.equal(indicator.style.border, "3px solid rgba(76, 154, 255, 0.95)");
+  assert.equal(indicator.style.background, "transparent");
+  assert.equal(indicator.style.left, "197px");
+  assert.equal(indicator.style.top, "97px");
+  assert.equal(indicator.style.width, "606px");
+  assert.equal(indicator.style.height, "506px");
+
+  const scrolled = await harness.send({
+    type: "SCROLL_CAPTURE",
+    segment: { index: 0, x: 0, y: 0 },
+  });
+  assert.equal(scrolled.ok, true);
+  assert.equal(scrolled.value.capture.mode, "region");
+  assert.equal(scrolled.value.capture.outputWidth, 600);
+  assert.equal(scrolled.value.capture.outputHeight, 1500);
+  assert.deepEqual(JSON.parse(JSON.stringify(scrolled.value.capture.frame)), {
+    x: 200,
+    y: 100,
+    width: 600,
+    height: 500,
+  });
+
+  const cleaned = await harness.send({ type: "CLEANUP_CAPTURE" });
+  assert.equal(cleaned.ok, true);
+  assert.equal(indicator.isConnected, false);
+  assert.equal(harness.scroller.scrollTop, 75);
+  assert.equal(harness.scroller.style.getPropertyValue("scrollbar-width"), "");
+  assert.equal(harness.context.scrollX, 12);
+  assert.equal(harness.context.scrollY, 34);
+});
+
+test("Escape cancels the region picker and nothing is left behind", async () => {
+  const harness = createContentHarness({ nestedScroller: true });
+  await harness.send({ type: "ENTER_REGION_PICKER" });
+  const highlight = harness.rootChildren[harness.rootChildren.length - 1];
+
+  harness.dispatch("keydown", {
+    key: "Escape",
+    preventDefault() {},
+    stopPropagation() {},
+  });
+
+  assert.ok(harness.events.includes("runtime:REGION_PICK_CANCELLED"));
+  assert.equal(highlight.isConnected, false);
+
+  const prepared = await harness.send({ type: "PREPARE_REGION_CAPTURE" });
+  assert.equal(prepared.ok, false);
+  assert.equal(prepared.error.code, "REGION_TARGET_INVALID");
+});
+
+test("clicking a non-scrollable point keeps the picker active", async () => {
+  const harness = createContentHarness({ nestedScroller: true });
+  await harness.send({ type: "ENTER_REGION_PICKER" });
+
+  harness.dispatch("click", {
+    target: harness.fixed,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  assert.ok(!harness.events.includes("runtime:REGION_PICKED"));
+
+  const again = await harness.send({ type: "ENTER_REGION_PICKER" });
+  assert.equal(again.ok, true);
+  assert.equal(harness.rootChildren.length, 1);
+
+  const child = { parentElement: harness.scroller };
+  harness.dispatch("mousemove", { target: child });
+  const highlight = harness.rootChildren[harness.rootChildren.length - 1];
+  assert.equal(highlight.style.display, "block");
+
+  const exited = await harness.send({ type: "EXIT_REGION_PICKER" });
+  assert.equal(exited.ok, true);
+  assert.equal(exited.value.active, false);
+  assert.equal(highlight.isConnected, false);
+});
+
+test("starting a full-page prepare dismisses an active region picker", async () => {
+  const harness = createContentHarness({ nestedScroller: true });
+  await harness.send({ type: "ENTER_REGION_PICKER" });
+  const highlight = harness.rootChildren[harness.rootChildren.length - 1];
+
+  const prepared = await harness.send({ type: "PREPARE_CAPTURE" });
+  assert.equal(prepared.ok, true);
+  assert.equal(highlight.isConnected, false);
+
+  await harness.send({ type: "CLEANUP_CAPTURE" });
+});
+
+test("region capture scrolls a partially off-screen region into view before preparing", async () => {
+  const harness = createContentHarness({
+    nestedScroller: true,
+    scrollerRect: { top: 700, bottom: 1200 },
+  });
+  await harness.send({ type: "ENTER_REGION_PICKER" });
+  const child = { parentElement: harness.scroller };
+  harness.dispatch("click", {
+    target: child,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+
+  const prepared = await harness.send({ type: "PREPARE_REGION_CAPTURE" });
+  assert.equal(prepared.ok, true);
+  assert.ok(harness.events.includes("windowScrollBy:0,600"));
+  assert.equal(harness.context.scrollY, 634);
+  assert.equal(prepared.value.capture.frame.y, 100);
+
+  const cleaned = await harness.send({ type: "CLEANUP_CAPTURE" });
+  assert.equal(cleaned.ok, true);
+  assert.equal(harness.context.scrollY, 34);
+  assert.equal(harness.frame.top, 700);
+});
+
+test("a region taller than the viewport fails closed", async () => {
+  const harness = createContentHarness({
+    nestedScroller: true,
+    scrollerRect: { top: -100, bottom: 800, height: 900 },
+  });
+  await harness.send({ type: "ENTER_REGION_PICKER" });
+  const child = { parentElement: harness.scroller };
+  harness.dispatch("click", {
+    target: child,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+
+  const prepared = await harness.send({ type: "PREPARE_REGION_CAPTURE" });
+  assert.equal(prepared.ok, false);
+  assert.equal(prepared.error.code, "SCROLL_TARGET_NOT_FULLY_VISIBLE");
+  assert.equal(harness.scroller.style.getPropertyValue("scrollbar-width"), "");
+  assert.equal(harness.context.scrollY, 34);
+});
+
+test("a full-page capture does not create a region frame indicator", async () => {
+  const harness = createContentHarness();
+  const prepared = await harness.send({ type: "PREPARE_CAPTURE" });
+  assert.equal(prepared.ok, true);
+  assert.equal(
+    harness.rootChildren.some((child) => child.id === "__fwps-region-frame"),
+    false,
+  );
   await harness.send({ type: "CLEANUP_CAPTURE" });
 });

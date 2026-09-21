@@ -12,7 +12,10 @@
   const MAX_SCROLL_ATTEMPTS = 3;
   const SCROLL_FLOAT_EPSILON_CSS_PX = 0.001;
   const SCROLL_EDGE_SLACK_CSS_PX = 1;
+  const REGION_FRAME_BORDER_WIDTH = 3;
   let captureSession = null;
+  let pickerSession = null;
+  let pendingRegionElement = null;
 
   class ContentCaptureError extends Error {
     constructor(code, message, details) {
@@ -237,7 +240,225 @@
     return "rgb(255, 255, 255)";
   }
 
-  function getCaptureDescriptor(target, metrics) {
+  function isScrollableRegionCandidate(element) {
+    if (
+      !element ||
+      element === document.documentElement ||
+      element === document.body ||
+      typeof element.scrollHeight !== "number"
+    ) {
+      return false;
+    }
+
+    const style = globalThis.getComputedStyle(element);
+    const scrollableX = /^(auto|scroll|overlay)$/.test(style.overflowX || "");
+    const scrollableY = /^(auto|scroll|overlay)$/.test(style.overflowY || "");
+
+    return (
+      (scrollableX && element.scrollWidth - element.clientWidth > 1) ||
+      (scrollableY && element.scrollHeight - element.clientHeight > 1)
+    );
+  }
+
+  function resolveScrollableRegion(start) {
+    let current = start;
+
+    while (
+      current &&
+      current !== document.documentElement &&
+      current !== document.body
+    ) {
+      if (isScrollableRegionCandidate(current)) {
+        return current;
+      }
+      current = current.parentElement;
+    }
+
+    return null;
+  }
+
+  function positionPickerHighlight(element) {
+    const highlight = pickerSession.highlight;
+
+    if (!element) {
+      highlight.style.display = "none";
+      return;
+    }
+
+    const rect = element.getBoundingClientRect();
+    highlight.style.left = `${rect.left}px`;
+    highlight.style.top = `${rect.top}px`;
+    highlight.style.width = `${rect.width}px`;
+    highlight.style.height = `${rect.height}px`;
+    highlight.style.display = "block";
+  }
+
+  function exitRegionPicker() {
+    if (!pickerSession) {
+      return;
+    }
+
+    const session = pickerSession;
+    pickerSession = null;
+    document.removeEventListener("mousemove", session.onMouseMove, true);
+    document.removeEventListener("click", session.onClick, true);
+    document.removeEventListener("keydown", session.onKeyDown, true);
+    globalThis.removeEventListener("scroll", session.onScroll, true);
+    globalThis.removeEventListener("resize", session.onScroll);
+    session.highlight.remove();
+    session.cursorStyle.remove();
+  }
+
+  function enterRegionPicker() {
+    if (captureSession) {
+      throw new ContentCaptureError(
+        "CAPTURE_ALREADY_ACTIVE",
+        "A capture is already active in this page.",
+      );
+    }
+    if (pickerSession) {
+      return { active: true };
+    }
+
+    const highlight = document.createElement("div");
+    highlight.id = "__fwps-region-picker-highlight";
+    highlight.style.position = "fixed";
+    highlight.style.pointerEvents = "none";
+    highlight.style.zIndex = "2147483647";
+    highlight.style.border = "2px solid rgba(76, 154, 255, 0.95)";
+    highlight.style.background = "rgba(76, 154, 255, 0.12)";
+    highlight.style.borderRadius = "3px";
+    highlight.style.display = "none";
+    (document.documentElement || document.body).appendChild(highlight);
+
+    const cursorStyle = document.createElement("style");
+    cursorStyle.textContent = "* { cursor: crosshair !important; }";
+    (document.head || document.documentElement).appendChild(cursorStyle);
+
+    pickerSession = {
+      candidate: null,
+      cursorStyle,
+      highlight,
+      onClick: null,
+      onKeyDown: null,
+      onMouseMove: null,
+      onScroll: null,
+    };
+
+    pickerSession.onMouseMove = (event) => {
+      if (!pickerSession) {
+        return;
+      }
+      pickerSession.candidate = resolveScrollableRegion(event.target);
+      positionPickerHighlight(pickerSession.candidate);
+    };
+    pickerSession.onClick = (event) => {
+      if (!pickerSession) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const target = resolveScrollableRegion(event.target);
+      if (!target) {
+        return;
+      }
+      exitRegionPicker();
+      pendingRegionElement = target;
+      browser.runtime.sendMessage({ type: "REGION_PICKED" }).catch(() => {});
+    };
+    pickerSession.onKeyDown = (event) => {
+      if (!pickerSession || event.key !== "Escape") {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      exitRegionPicker();
+      browser.runtime
+        .sendMessage({ type: "REGION_PICK_CANCELLED" })
+        .catch(() => {});
+    };
+    pickerSession.onScroll = () => {
+      if (pickerSession) {
+        positionPickerHighlight(pickerSession.candidate);
+      }
+    };
+
+    document.addEventListener("mousemove", pickerSession.onMouseMove, true);
+    document.addEventListener("click", pickerSession.onClick, true);
+    document.addEventListener("keydown", pickerSession.onKeyDown, true);
+    globalThis.addEventListener("scroll", pickerSession.onScroll, true);
+    globalThis.addEventListener("resize", pickerSession.onScroll);
+
+    return { active: true };
+  }
+
+  function createRegionScrollTarget(element) {
+    const scrollbarWidth = preserveStyleProperty(element, "scrollbar-width");
+    const overflowAnchor = preserveStyleProperty(element, "overflow-anchor");
+    const scrollBehavior = preserveStyleProperty(element, "scroll-behavior");
+    const scrollSnapType = preserveStyleProperty(element, "scroll-snap-type");
+    element.style.setProperty("scrollbar-width", "none", "important");
+    element.style.setProperty("overflow-anchor", "none", "important");
+    element.style.setProperty("scroll-behavior", "auto", "important");
+    element.style.setProperty("scroll-snap-type", "none", "important");
+
+    return {
+      element,
+      mode: "element",
+      originalX: element.scrollLeft,
+      originalY: element.scrollTop,
+      overflowAnchor,
+      scrollbarWidth,
+      scrollBehavior,
+      scrollSnapType,
+    };
+  }
+
+  function scrollRegionIntoView(element) {
+    const rect = element.getBoundingClientRect();
+    let dx = 0;
+    let dy = 0;
+
+    if (rect.width <= globalThis.innerWidth) {
+      if (rect.left < 0) {
+        dx = rect.left;
+      } else if (rect.right > globalThis.innerWidth) {
+        dx = rect.right - globalThis.innerWidth;
+      }
+    }
+    if (rect.height <= globalThis.innerHeight) {
+      if (rect.top < 0) {
+        dy = rect.top;
+      } else if (rect.bottom > globalThis.innerHeight) {
+        dy = rect.bottom - globalThis.innerHeight;
+      }
+    }
+
+    if (dx !== 0 || dy !== 0) {
+      globalThis.scrollBy(dx, dy);
+    }
+  }
+
+  function createRegionFrameIndicator(frame) {
+    const border = REGION_FRAME_BORDER_WIDTH;
+    const indicator = document.createElement("div");
+    indicator.id = "__fwps-region-frame";
+    indicator.style.position = "fixed";
+    indicator.style.pointerEvents = "none";
+    indicator.style.zIndex = "2147483646";
+    indicator.style.boxSizing = "border-box";
+    indicator.style.border = `${border}px solid rgba(76, 154, 255, 0.95)`;
+    indicator.style.borderRadius = "3px";
+    indicator.style.background = "transparent";
+    indicator.style.left = `${frame.x - border}px`;
+    indicator.style.top = `${frame.y - border}px`;
+    indicator.style.width = `${frame.width + border * 2}px`;
+    indicator.style.height = `${frame.height + border * 2}px`;
+    (document.documentElement || document.body).appendChild(indicator);
+    return indicator;
+  }
+
+  function getCaptureDescriptor(target, metrics, region = false) {
     if (target.mode === "window") {
       return {
         backgroundColor: getPageBackgroundColor(),
@@ -274,9 +495,13 @@
       bitmapViewportHeight: globalThis.innerHeight,
       bitmapViewportWidth: globalThis.innerWidth,
       frame: { x, y, width, height },
-      mode: "element",
-      outputHeight: globalThis.innerHeight + (metrics.documentHeight - height),
-      outputWidth: globalThis.innerWidth + (metrics.documentWidth - width),
+      mode: region ? "region" : "element",
+      outputHeight: region
+        ? metrics.documentHeight
+        : globalThis.innerHeight + (metrics.documentHeight - height),
+      outputWidth: region
+        ? metrics.documentWidth
+        : globalThis.innerWidth + (metrics.documentWidth - width),
     };
   }
 
@@ -425,11 +650,41 @@
   }
 
   async function prepareCapture() {
+    return prepareCaptureSession(null);
+  }
+
+  async function prepareRegionCapture() {
+    const element = pendingRegionElement;
+    pendingRegionElement = null;
+
+    if (!element || !element.isConnected) {
+      throw new ContentCaptureError(
+        "REGION_TARGET_INVALID",
+        "The picked region is no longer attached to the page.",
+      );
+    }
+
+    const rangeX = element.scrollWidth - element.clientWidth;
+    const rangeY = element.scrollHeight - element.clientHeight;
+    if (Math.max(rangeX, rangeY) <= 1) {
+      throw new ContentCaptureError(
+        "REGION_TARGET_INVALID",
+        "The picked region is no longer scrollable.",
+      );
+    }
+
+    return prepareCaptureSession(element);
+  }
+
+  async function prepareCaptureSession(regionElement) {
     if (captureSession) {
       throw new ContentCaptureError(
         "CAPTURE_ALREADY_ACTIVE",
         "A capture is already active in this page.",
       );
+    }
+    if (pickerSession) {
+      exitRegionPicker();
     }
 
     const root = document.documentElement;
@@ -437,6 +692,8 @@
       originalX: globalThis.scrollX,
       originalY: globalThis.scrollY,
       previousCaptureAttribute: root.getAttribute(CAPTURE_ATTRIBUTE),
+      frameIndicator: null,
+      region: regionElement !== null,
       style: null,
       fixed: [],
       scrollTarget: null,
@@ -446,7 +703,13 @@
     try {
       captureSession.style = installCaptureStyle();
       root.setAttribute(CAPTURE_ATTRIBUTE, "true");
-      captureSession.scrollTarget = createScrollTarget();
+      captureSession.scrollTarget = regionElement
+        ? createRegionScrollTarget(regionElement)
+        : createScrollTarget();
+      if (regionElement) {
+        scrollRegionIntoView(regionElement);
+        await waitForPageToSettle();
+      }
       await warmScrollablePage(captureSession.scrollTarget);
       const positioned = collectPositionedElements();
       captureSession.fixed = positioned.fixed;
@@ -454,9 +717,18 @@
       neutralizeStickyElements();
       await waitForPageToSettle();
       const metrics = getTargetMetrics(captureSession.scrollTarget);
+      const capture = getCaptureDescriptor(
+        captureSession.scrollTarget,
+        metrics,
+        regionElement !== null,
+      );
+
+      if (regionElement && capture.frame) {
+        captureSession.frameIndicator = createRegionFrameIndicator(capture.frame);
+      }
 
       return {
-        capture: getCaptureDescriptor(captureSession.scrollTarget, metrics),
+        capture,
         metrics,
         pageUrl: globalThis.location.href,
         title: document.title,
@@ -566,7 +838,7 @@
     return {
       actualX: actual.x,
       actualY: actual.y,
-      capture: getCaptureDescriptor(target, metrics),
+      capture: getCaptureDescriptor(target, metrics, captureSession.region),
       metrics,
     };
   }
@@ -589,6 +861,11 @@
     }
 
     attempt(() => setFixedVisibility(false));
+    attempt(() => {
+      if (session.frameIndicator && session.frameIndicator.isConnected) {
+        session.frameIndicator.remove();
+      }
+    });
     attempt(() => restoreStickyElements(session));
     attempt(() => {
       if (session.scrollTarget && session.scrollTarget.mode === "element") {
@@ -652,6 +929,13 @@
     switch (message && message.type) {
       case "PREPARE_CAPTURE":
         return prepareCapture();
+      case "PREPARE_REGION_CAPTURE":
+        return prepareRegionCapture();
+      case "ENTER_REGION_PICKER":
+        return enterRegionPicker();
+      case "EXIT_REGION_PICKER":
+        exitRegionPicker();
+        return { active: false };
       case "SCROLL_CAPTURE":
         return scrollForCapture(message.segment);
       case "CLEANUP_CAPTURE":
