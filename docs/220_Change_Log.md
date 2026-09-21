@@ -1,5 +1,13 @@
 # Change Log
 
+## [20260909] Accept a one-pixel clamp at the scroll edge on long pages
+
+- **類型**：Bugfix
+- **影響範圍**：extension, tests, docs
+- **內容**：長頁實測中文件實際高度為小數（如 `12936.4`），整數化上限為 `12937`，瀏覽器只能鉗制到 `12936`，DPR > 1 時 1 CSS px 偏差超過實體像素容差，最後一段報 `SCROLL_POSITION_MISMATCH` 中止整次擷取；捲動校驗改為先將請求位置鉗制到即時捲動上限，請求目標位於捲動邊緣時接受落在上限 ±(1 CSS px + 實體像素容差) 內的實際位置，拼接端沿用 `adjustSegmentForScroll` 補償；頁面中段的捲動校驗維持嚴格，持續阻止捲動的頁面仍 fail closed；47 項測試通過。
+- **關聯文件**：220
+- **操作人**：Kimi Code
+
 ## [20260909] Report restricted Mozilla domains and injection refusals clearly
 
 - **類型**：Bugfix

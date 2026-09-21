@@ -11,6 +11,7 @@
   const MAX_WARMUP_STEPS = 100;
   const MAX_SCROLL_ATTEMPTS = 3;
   const SCROLL_FLOAT_EPSILON_CSS_PX = 0.001;
+  const SCROLL_EDGE_SLACK_CSS_PX = 1;
   let captureSession = null;
 
   class ContentCaptureError extends Error {
@@ -490,29 +491,54 @@
     const scrollTolerance =
       1 / Math.max(1, globalThis.devicePixelRatio || 1) +
       SCROLL_FLOAT_EPSILON_CSS_PX;
-    let actual = getTargetScroll(captureSession.scrollTarget);
+    const target = captureSession.scrollTarget;
+    const scrollMetrics = getTargetMetrics(target);
+    const maxX = Math.max(
+      0,
+      scrollMetrics.documentWidth - scrollMetrics.viewportWidth,
+    );
+    const maxY = Math.max(
+      0,
+      scrollMetrics.documentHeight - scrollMetrics.viewportHeight,
+    );
+    const expectedX = Math.min(Math.max(segment.x, 0), maxX);
+    const expectedY = Math.min(Math.max(segment.y, 0), maxY);
+
+    function axisSettled(actualValue, requestedValue, expectedValue, maximum) {
+      if (Math.abs(actualValue - expectedValue) <= scrollTolerance) {
+        return true;
+      }
+
+      return (
+        requestedValue >= maximum &&
+        Math.abs(actualValue - maximum) <=
+          SCROLL_EDGE_SLACK_CSS_PX + scrollTolerance
+      );
+    }
+
+    function positionSettled(position) {
+      return (
+        axisSettled(position.x, segment.x, expectedX, maxX) &&
+        axisSettled(position.y, segment.y, expectedY, maxY)
+      );
+    }
+
+    let actual = getTargetScroll(target);
     let attempts = 0;
 
     for (let attempt = 0; attempt < MAX_SCROLL_ATTEMPTS; attempt += 1) {
       attempts = attempt + 1;
-      setTargetScroll(captureSession.scrollTarget, segment.x, segment.y);
+      setTargetScroll(target, expectedX, expectedY);
       await waitForPageToSettle();
-      actual = getTargetScroll(captureSession.scrollTarget);
+      actual = getTargetScroll(target);
 
-      if (
-        Math.abs(actual.x - segment.x) <= scrollTolerance &&
-        Math.abs(actual.y - segment.y) <= scrollTolerance
-      ) {
+      if (positionSettled(actual)) {
         break;
       }
     }
 
-    if (
-      Math.abs(actual.x - segment.x) > scrollTolerance ||
-      Math.abs(actual.y - segment.y) > scrollTolerance
-    ) {
-      const target = captureSession.scrollTarget;
-      const metrics = getTargetMetrics(target);
+    if (!positionSettled(actual)) {
+      const failureMetrics = getTargetMetrics(target);
       throw new ContentCaptureError(
         "SCROLL_POSITION_MISMATCH",
         "The page did not settle at the requested capture position.",
@@ -521,8 +547,14 @@
           actualY: actual.y,
           attempts,
           connected: target.mode === "window" || target.element.isConnected,
-          maxX: Math.max(0, metrics.documentWidth - metrics.viewportWidth),
-          maxY: Math.max(0, metrics.documentHeight - metrics.viewportHeight),
+          maxX: Math.max(
+            0,
+            failureMetrics.documentWidth - failureMetrics.viewportWidth,
+          ),
+          maxY: Math.max(
+            0,
+            failureMetrics.documentHeight - failureMetrics.viewportHeight,
+          ),
           mode: target.mode,
           requestedX: segment.x,
           requestedY: segment.y,
@@ -530,11 +562,11 @@
       );
     }
 
-    const metrics = getTargetMetrics(captureSession.scrollTarget);
+    const metrics = getTargetMetrics(target);
     return {
       actualX: actual.x,
       actualY: actual.y,
-      capture: getCaptureDescriptor(captureSession.scrollTarget, metrics),
+      capture: getCaptureDescriptor(target, metrics),
       metrics,
     };
   }

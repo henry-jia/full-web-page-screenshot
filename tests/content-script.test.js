@@ -42,10 +42,12 @@ function createElement(position) {
 function createContentHarness({
   devicePixelRatio = 1,
   nestedScroller = false,
+  nestedScrollMaxTop = Infinity,
   nestedScrollWidth = 600,
   redirectScroll = false,
   rootScrollHeight = 600,
   scrollerRect = {},
+  windowScrollMaxY = Infinity,
 } = {}) {
   const rootAttributes = new Map();
   const events = [];
@@ -97,10 +99,11 @@ function createContentHarness({
           return nestedScrollTop;
         },
         set(value) {
-          const actualValue = value > 0 && nestedRedirectsRemaining > 0
-            ? value + nestedRedirectOffset
-            : value;
-          if (value > 0 && nestedRedirectsRemaining > 0) {
+          const clampedValue = Math.min(value, nestedScrollMaxTop);
+          const actualValue = clampedValue > 0 && nestedRedirectsRemaining > 0
+            ? clampedValue + nestedRedirectOffset
+            : clampedValue;
+          if (clampedValue > 0 && nestedRedirectsRemaining > 0) {
             nestedRedirectsRemaining -= 1;
           }
           nestedScrollTop = actualValue;
@@ -206,7 +209,7 @@ function createContentHarness({
         windowRedirectsRemaining -= 1;
       }
       context.scrollX = shouldRedirect ? x + 10 : x;
-      context.scrollY = y;
+      context.scrollY = Math.min(y, windowScrollMaxY);
     },
   });
   context.globalThis = context;
@@ -380,6 +383,66 @@ test("Firefox device-pixel scroll quantization is accepted up to one physical pi
   );
 
   harness.redirectNextNestedScroll(0);
+  const cleaned = await harness.send({ type: "CLEANUP_CAPTURE" });
+  assert.equal(cleaned.ok, true);
+});
+
+test("a window scroll clamped one pixel below the requested maximum settles at the scroll edge", async () => {
+  const harness = createContentHarness({
+    devicePixelRatio: 1.5,
+    rootScrollHeight: 13000,
+    windowScrollMaxY: 12399,
+  });
+  const prepared = await harness.send({ type: "PREPARE_CAPTURE" });
+  assert.equal(prepared.ok, true);
+
+  const response = await harness.send({
+    type: "SCROLL_CAPTURE",
+    segment: { index: 1, x: 0, y: 12400 },
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.value.actualY, 12399);
+  assert.ok(harness.events.includes("windowScroll:0,12400"));
+  const cleaned = await harness.send({ type: "CLEANUP_CAPTURE" });
+  assert.equal(cleaned.ok, true);
+});
+
+test("a nested scroll clamped one pixel below the requested maximum settles at the scroll edge", async () => {
+  const harness = createContentHarness({
+    devicePixelRatio: 1.5,
+    nestedScroller: true,
+    nestedScrollMaxTop: 999,
+  });
+  const prepared = await harness.send({ type: "PREPARE_CAPTURE" });
+  assert.equal(prepared.ok, true);
+
+  const response = await harness.send({
+    type: "SCROLL_CAPTURE",
+    segment: { index: 1, x: 0, y: 1000 },
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.value.actualY, 999);
+  const cleaned = await harness.send({ type: "CLEANUP_CAPTURE" });
+  assert.equal(cleaned.ok, true);
+});
+
+test("a clamped scroll away from the scroll edge is still rejected", async () => {
+  const harness = createContentHarness({
+    devicePixelRatio: 1.5,
+    rootScrollHeight: 13000,
+    windowScrollMaxY: 499,
+  });
+  await harness.send({ type: "PREPARE_CAPTURE" });
+
+  const response = await harness.send({
+    type: "SCROLL_CAPTURE",
+    segment: { index: 1, x: 0, y: 500 },
+  });
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, "SCROLL_POSITION_MISMATCH");
   const cleaned = await harness.send({ type: "CLEANUP_CAPTURE" });
   assert.equal(cleaned.ok, true);
 });
