@@ -1,5 +1,13 @@
 # Change Log
 
+## [20260921] Bump version to 0.1.6 for the listed AMO channel
+
+- **類型**：Config
+- **影響範圍**：manifest, docs, release
+- **內容**：0.1.5 誤傳至 AMO 自分發（非公開）管道，版本號被占用且 AMO 規則刪除後不得重用同號；依 0.1.2 先例直接遞增版本號至 0.1.6 重新提交公開（listed）管道，程式碼與 0.1.5 完全相同；47 項測試通過。
+- **關聯文件**：220
+- **操作人**：Kimi Code
+
 ## [20260909] Accept a one-pixel clamp at the scroll edge on long pages
 
 - **類型**：Bugfix
