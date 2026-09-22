@@ -6,6 +6,14 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const CapturePlan = require("../extension/capture-plan.js");
+const FwpsI18n = require("../extension/i18n.js");
+
+const zhTwCatalog = JSON.parse(
+  fs.readFileSync(
+    path.join(__dirname, "..", "extension", "_locales", "zh_TW", "messages.json"),
+    "utf8",
+  ),
+);
 
 const backgroundSource = fs.readFileSync(
   path.join(__dirname, "..", "extension", "background.js"),
@@ -66,10 +74,23 @@ function createBackgroundHarness({
     downloads: {
       download,
     },
+    i18n: {
+      getMessage(key, substitutions) {
+        const entry = zhTwCatalog[key];
+        if (!entry) {
+          return "";
+        }
+        return FwpsI18n.formatMessage(entry.message, substitutions);
+      },
+      getUILanguage() {
+        return "zh-TW";
+      },
+    },
   };
   const context = vm.createContext({
     browser,
     CapturePlan,
+    FwpsI18n,
     console,
     Date,
     Image: ImageClass,
@@ -1091,20 +1112,20 @@ test("a region capture crops to the picked element frame after the user picks it
   }
   const tab = { id: 80, windowId: 2, active: true, url: "https://example.test/app" };
   const metrics = {
-    documentWidth: 600,
-    documentHeight: 1500,
-    viewportWidth: 600,
-    viewportHeight: 500,
+    documentWidth: 596,
+    documentHeight: 1496,
+    viewportWidth: 596,
+    viewportHeight: 496,
     devicePixelRatio: 1,
   };
   const capture = {
     backgroundColor: "rgb(4, 12, 15)",
     bitmapViewportHeight: 600,
     bitmapViewportWidth: 800,
-    frame: { x: 200, y: 100, width: 600, height: 500 },
+    frame: { x: 202, y: 102, width: 596, height: 496 },
     mode: "region",
-    outputHeight: 1500,
-    outputWidth: 600,
+    outputHeight: 1496,
+    outputWidth: 596,
   };
   const harness = createBackgroundHarness({
     tab,
@@ -1172,17 +1193,23 @@ test("a region capture crops to the picked element frame after the user picks it
   assert.equal(state.status, "success");
   assert.match(state.message, /區域截圖已儲存/);
   assert.match(state.filename, /^region-example\.test-/);
-  assert.equal(canvas.width, 600);
-  assert.equal(canvas.height, 1500);
-  assert.deepEqual(fillCalls, [[0, 0, 600, 1500]]);
-  assert.equal(drawCalls.length, 3);
+  assert.equal(canvas.width, 596);
+  assert.equal(canvas.height, 1496);
+  assert.deepEqual(fillCalls, [[0, 0, 596, 1496]]);
+  assert.equal(drawCalls.length, 4);
   assert.ok(drawCalls.every((call) => call.length === 9));
-  assert.deepEqual(drawCalls[0].slice(1), [200, 100, 600, 500, 0, 0, 600, 500]);
-  assert.deepEqual(drawCalls[1].slice(1), [200, 100, 600, 500, 0, 500, 600, 500]);
-  assert.deepEqual(drawCalls[2].slice(1), [200, 100, 600, 500, 0, 1000, 600, 500]);
+  assert.deepEqual(drawCalls[0].slice(1), [202, 102, 596, 496, 0, 0, 596, 496]);
+  assert.deepEqual(drawCalls[1].slice(1), [202, 102, 596, 496, 0, 496, 596, 496]);
+  assert.deepEqual(drawCalls[2].slice(1), [202, 102, 596, 496, 0, 992, 596, 496]);
+  assert.deepEqual(drawCalls[3].slice(1), [202, 590, 596, 8, 0, 1488, 596, 8]);
   assert.deepEqual(contentMessages, [
     "ENTER_REGION_PICKER",
     "PREPARE_REGION_CAPTURE",
+    "SCROLL_CAPTURE",
+    "SCROLL_CAPTURE",
+    "SCROLL_CAPTURE",
+    "SCROLL_CAPTURE",
+    "SCROLL_CAPTURE",
     "SCROLL_CAPTURE",
     "SCROLL_CAPTURE",
     "SCROLL_CAPTURE",
@@ -1641,4 +1668,219 @@ test("a failed capture flags the badge with an error mark", async () => {
     .filter((call) => Object.prototype.hasOwnProperty.call(call, "color"))
     .map((call) => call.color);
   assert.equal(colors[colors.length - 1], "#b33747");
+});
+
+function createCapturingHarness({ tab, metrics, onScrollCommand }) {
+  const drawCalls = [];
+  const context2d = {
+    fillStyle: "",
+    imageSmoothingEnabled: true,
+    drawImage(...args) {
+      drawCalls.push(args);
+    },
+    fillRect() {},
+  };
+  const canvas = {
+    width: 0,
+    height: 0,
+    getContext() {
+      return context2d;
+    },
+    toBlob(callback) {
+      callback({ type: "image/png" });
+    },
+  };
+  class LoadedImage {
+    constructor() {
+      this.naturalWidth = 800;
+      this.naturalHeight = 600;
+    }
+    set src(_value) {
+      Promise.resolve().then(() => this.onload());
+    }
+  }
+
+  const state = { captureCount: 0, downloadCount: 0 };
+  const harness = createBackgroundHarness({
+    tab,
+    captureVisibleTab: async () => {
+      state.captureCount += 1;
+      return "data:image/png;base64,fixture";
+    },
+    documentApi: { createElement: () => canvas },
+    download: async () => {
+      state.downloadCount += 1;
+      return 1;
+    },
+    ImageClass: LoadedImage,
+    sendMessage: async (_tabId, message) => {
+      if (message.type === "PREPARE_CAPTURE") {
+        return { ok: true, value: { metrics, pageUrl: tab.url, title: "Example" } };
+      }
+      if (message.type === "SCROLL_CAPTURE") {
+        return onScrollCommand(message);
+      }
+      if (message.type === "CLEANUP_CAPTURE") {
+        return { ok: true, value: { cleaned: true } };
+      }
+      throw new Error(`Unexpected command: ${message.type}`);
+    },
+    timer(callback) {
+      callback();
+      return 1;
+    },
+    urlApi: {
+      createObjectURL: () => "blob:fixture",
+      revokeObjectURL() {},
+    },
+  });
+
+  return { drawCalls, harness, state };
+}
+
+test("a segment whose scroll drifts after capture is re-scrolled and re-captured", async () => {
+  const tab = { id: 90, windowId: 2, active: true, url: "https://example.test/" };
+  const metrics = {
+    documentWidth: 800,
+    documentHeight: 1200,
+    viewportWidth: 800,
+    viewportHeight: 600,
+    devicePixelRatio: 1,
+  };
+  let driftsRemaining = 1;
+  const { drawCalls, harness, state } = createCapturingHarness({
+    tab,
+    metrics,
+    onScrollCommand(message) {
+      if (message.segment.verifyOnly && driftsRemaining > 0) {
+        driftsRemaining -= 1;
+        return {
+          ok: false,
+          error: {
+            code: "SEGMENT_SCROLL_LOST",
+            details: {
+              actualX: 0,
+              actualY: 0,
+              requestedX: message.segment.x,
+              requestedY: message.segment.y,
+            },
+          },
+        };
+      }
+      return {
+        ok: true,
+        value: {
+          actualX: message.segment.x,
+          actualY: message.segment.y,
+          metrics,
+        },
+      };
+    },
+  });
+
+  await harness.sendRuntimeMessage({ type: "START_CAPTURE", tabId: tab.id });
+  const result = await waitForTerminalState(harness, tab.id);
+
+  assert.equal(result.status, "success");
+  assert.equal(driftsRemaining, 0);
+  assert.equal(state.captureCount, 3);
+  assert.equal(state.downloadCount, 1);
+  assert.equal(drawCalls.length, 2);
+});
+
+test("a segment re-rendered after capture is re-captured", async () => {
+  const tab = { id: 91, windowId: 2, active: true, url: "https://example.test/" };
+  const metrics = {
+    documentWidth: 800,
+    documentHeight: 1200,
+    viewportWidth: 800,
+    viewportHeight: 600,
+    devicePixelRatio: 1,
+  };
+  let mutationDrifts = 1;
+  const { drawCalls, harness, state } = createCapturingHarness({
+    tab,
+    metrics,
+    onScrollCommand(message) {
+      if (message.segment.verifyOnly && mutationDrifts > 0) {
+        mutationDrifts -= 1;
+        return {
+          ok: true,
+          value: {
+            actualX: message.segment.x,
+            actualY: message.segment.y,
+            metrics,
+            mutations: 8,
+          },
+        };
+      }
+      return {
+        ok: true,
+        value: {
+          actualX: message.segment.x,
+          actualY: message.segment.y,
+          metrics,
+          mutations: 5,
+        },
+      };
+    },
+  });
+
+  await harness.sendRuntimeMessage({ type: "START_CAPTURE", tabId: tab.id });
+  const result = await waitForTerminalState(harness, tab.id);
+
+  assert.equal(result.status, "success");
+  assert.equal(mutationDrifts, 0);
+  assert.equal(state.captureCount, 3);
+  assert.equal(state.downloadCount, 1);
+  assert.equal(drawCalls.length, 2);
+});
+
+test("a segment that keeps drifting fails closed without downloading", async () => {
+  const tab = { id: 92, windowId: 2, active: true, url: "https://example.test/" };
+  const metrics = {
+    documentWidth: 800,
+    documentHeight: 1200,
+    viewportWidth: 800,
+    viewportHeight: 600,
+    devicePixelRatio: 1,
+  };
+  const { drawCalls, harness, state } = createCapturingHarness({
+    tab,
+    metrics,
+    onScrollCommand(message) {
+      if (message.segment.verifyOnly) {
+        return {
+          ok: false,
+          error: {
+            code: "SEGMENT_SCROLL_LOST",
+            details: {
+              actualX: 0,
+              actualY: 0,
+              requestedX: message.segment.x,
+              requestedY: message.segment.y,
+            },
+          },
+        };
+      }
+      return {
+        ok: true,
+        value: {
+          actualX: message.segment.x,
+          actualY: message.segment.y,
+          metrics,
+        },
+      };
+    },
+  });
+
+  await harness.sendRuntimeMessage({ type: "START_CAPTURE", tabId: tab.id });
+  const result = await waitForTerminalState(harness, tab.id);
+
+  assert.equal(result.status, "error");
+  assert.equal(result.errorCode, "SEGMENT_SCROLL_LOST");
+  assert.match(result.message, /自行捲動或更新/);
+  assert.equal(state.captureCount, 3);
+  assert.equal(state.downloadCount, 0);
+  assert.equal(drawCalls.length, 0);
 });

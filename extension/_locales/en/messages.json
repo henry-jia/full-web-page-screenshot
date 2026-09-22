@@ -1,0 +1,189 @@
+{
+  "extension_name": {
+    "message": "Full Web Page Screenshot"
+  },
+  "extension_description": {
+    "message": "Capture the complete scrollable area of the active page as a local PNG."
+  },
+  "browser_action_title": {
+    "message": "Capture full page"
+  },
+  "popup_title": {
+    "message": "Full Page Screenshot"
+  },
+  "popup_intro": {
+    "message": "Automatically scrolls the active tab, stitches it, and downloads a PNG."
+  },
+  "button_capture_full": {
+    "message": "Capture full page"
+  },
+  "button_capture_region": {
+    "message": "Capture scrollable region"
+  },
+  "button_waiting_pick": {
+    "message": "Waiting for region selection"
+  },
+  "button_busy": {
+    "message": "Capture in progress"
+  },
+  "progress_aria_label": {
+    "message": "Capture progress"
+  },
+  "privacy_note": {
+    "message": "Images are processed locally and never uploaded."
+  },
+  "capture_idle_message": {
+    "message": "Ready to capture the current page."
+  },
+  "status_idle": {
+    "message": "Idle"
+  },
+  "status_picking": {
+    "message": "Pick a region"
+  },
+  "status_capturing": {
+    "message": "Capturing"
+  },
+  "status_encoding": {
+    "message": "Saving"
+  },
+  "status_success": {
+    "message": "Done"
+  },
+  "status_error": {
+    "message": "Failed"
+  },
+  "status_label_unknown": {
+    "message": "Status"
+  },
+  "status_message_unavailable": {
+    "message": "Capture status is temporarily unavailable."
+  },
+  "error_background_unreachable": {
+    "message": "Could not reach the extension's background process. Please close and reopen this panel."
+  },
+  "error_start_capture": {
+    "message": "Could not start the capture. Reload the page and try again."
+  },
+  "error_start_region": {
+    "message": "Could not start region selection. Reload the page and try again."
+  },
+  "error_no_active_tab": {
+    "message": "No capturable active tab was found."
+  },
+  "badge_picking": {
+    "message": "Pick"
+  },
+  "badge_encoding": {
+    "message": "Save"
+  },
+  "error_unsupported_page": {
+    "message": "Firefox does not allow capturing this page; please use a regular website tab."
+  },
+  "error_restricted_page": {
+    "message": "For security reasons, Firefox blocks all extensions on official domains such as addons.mozilla.org; please use a regular website tab."
+  },
+  "error_content_script_unavailable": {
+    "message": "Could not read the current page; reload a regular website and try again."
+  },
+  "error_tab_not_active": {
+    "message": "The tab was switched during capture. Keep the target tab in the foreground and try again."
+  },
+  "error_page_size_changed": {
+    "message": "The page kept changing size during capture, so it was stopped to avoid cropping."
+  },
+  "error_scroll_position_mismatch": {
+    "message": "The page prevented precise scrolling, so the capture was stopped to avoid blank areas."
+  },
+  "error_scroll_target_not_fully_visible": {
+    "message": "The scrollable region is not fully visible in the viewport (it must be smaller than the viewport and fully visible), so the capture was stopped to avoid missing content."
+  },
+  "error_region_target_invalid": {
+    "message": "The selected scrollable region is no longer valid (removed or no longer scrollable); please pick it again."
+  },
+  "error_canvas_dimension_exceeded": {
+    "message": "The page is too long or too wide and exceeds Firefox's safe image dimensions."
+  },
+  "error_canvas_area_exceeded": {
+    "message": "The page has too many pixels, so the capture was stopped to keep the browser from running out of memory."
+  },
+  "error_too_many_segments": {
+    "message": "The page needs too many capture segments, so it was stopped to avoid occupying the browser for too long."
+  },
+  "error_capture_already_active": {
+    "message": "This tab is already being captured."
+  },
+  "error_download_failed": {
+    "message": "The image was created, but Firefox could not start the download."
+  },
+  "error_cleanup_failed": {
+    "message": "The page state could not be fully restored; please reload this tab."
+  },
+  "error_segment_scroll_lost": {
+    "message": "The page scrolled or updated itself during capture and stayed unstable after retries, so the capture was stopped to avoid misaligned stitching; please try again."
+  },
+  "error_capture_failed": {
+    "message": "Capture failed. Reload the page and try again."
+  },
+  "diag_scroll_mismatch": {
+    "message": " Diagnostics: $1, requested ($2, $3), actual ($4, $5), max ($6, $7), $8 attempt(s), target $9.",
+    "description": "$1 scroll mode; $2/$3 requested x/y; $4/$5 actual x/y; $6/$7 max x/y; $8 attempts; $9 connection state"
+  },
+  "diag_target_connected": {
+    "message": "connected"
+  },
+  "diag_target_disconnected": {
+    "message": "disconnected"
+  },
+  "diag_target_unknown": {
+    "message": "unknown"
+  },
+  "diag_page_size_document": {
+    "message": " Diagnostics: document $1 × $2 → $3 × $4, viewport $5 × $6 → $7 × $8.",
+    "description": "$1..$4 document width/height before → after; $5..$8 viewport width/height before → after"
+  },
+  "diag_page_size_frame": {
+    "message": " Diagnostics: region frame ($1, $2, $3 × $4) → ($5, $6, $7 × $8).",
+    "description": "$1..$4 region frame x, y, width × height before; $5..$8 after"
+  },
+  "capture_progress": {
+    "message": "Capturing segment $1 of $2.",
+    "description": "$1 current segment index; $2 total segments"
+  },
+  "capture_prepare": {
+    "message": "Preparing to capture $1 segments.",
+    "description": "$1 total segments"
+  },
+  "capture_encoding": {
+    "message": "Building the PNG."
+  },
+  "capture_success_saved": {
+    "message": "$1 saved to your downloads folder.",
+    "description": "$1 capture noun (full page or region capture)"
+  },
+  "capture_success_scaled": {
+    "message": "$1 was scaled to $2 × $3 pixels and saved.",
+    "description": "$1 capture noun; $2 final width; $3 final height"
+  },
+  "noun_full_page": {
+    "message": "Full page"
+  },
+  "noun_region": {
+    "message": "Region capture"
+  },
+  "capture_analyzing_page": {
+    "message": "Analyzing page dimensions."
+  },
+  "capture_preparing_picker": {
+    "message": "Preparing region selection."
+  },
+  "picker_prompt": {
+    "message": "Click the scrollable region you want to capture; press Esc to cancel."
+  },
+  "capture_analyzing_region": {
+    "message": "Analyzing region dimensions."
+  },
+  "pick_cancelled": {
+    "message": "Region selection cancelled."
+  }
+}

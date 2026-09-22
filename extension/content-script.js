@@ -13,6 +13,7 @@
   const SCROLL_FLOAT_EPSILON_CSS_PX = 0.001;
   const SCROLL_EDGE_SLACK_CSS_PX = 1;
   const REGION_FRAME_BORDER_WIDTH = 3;
+  const REGION_FRAME_INSET_CSS_PX = 2;
   let captureSession = null;
   let pickerSession = null;
   let pendingRegionElement = null;
@@ -198,11 +199,13 @@
       return getWindowMetrics();
     }
 
+    const inset = target.region ? REGION_FRAME_INSET_CSS_PX * 2 : 0;
+
     return {
-      documentWidth: target.element.scrollWidth,
-      documentHeight: target.element.scrollHeight,
-      viewportWidth: target.element.clientWidth,
-      viewportHeight: target.element.clientHeight,
+      documentWidth: target.element.scrollWidth - inset,
+      documentHeight: target.element.scrollHeight - inset,
+      viewportWidth: target.element.clientWidth - inset,
+      viewportHeight: target.element.clientHeight - inset,
       devicePixelRatio: globalThis.devicePixelRatio || 1,
     };
   }
@@ -411,6 +414,7 @@
       scrollbarWidth,
       scrollBehavior,
       scrollSnapType,
+      region: true,
     };
   }
 
@@ -472,17 +476,17 @@
     }
 
     const rect = target.element.getBoundingClientRect();
-    const x = rect.left + target.element.clientLeft;
-    const y = rect.top + target.element.clientTop;
-    const width = target.element.clientWidth;
-    const height = target.element.clientHeight;
+    const boxX = rect.left + target.element.clientLeft;
+    const boxY = rect.top + target.element.clientTop;
+    const boxWidth = target.element.clientWidth;
+    const boxHeight = target.element.clientHeight;
     const visibilityTolerance = 0.5;
 
     if (
-      x < -visibilityTolerance ||
-      y < -visibilityTolerance ||
-      x + width > globalThis.innerWidth + visibilityTolerance ||
-      y + height > globalThis.innerHeight + visibilityTolerance
+      boxX < -visibilityTolerance ||
+      boxY < -visibilityTolerance ||
+      boxX + boxWidth > globalThis.innerWidth + visibilityTolerance ||
+      boxY + boxHeight > globalThis.innerHeight + visibilityTolerance
     ) {
       throw new ContentCaptureError(
         "SCROLL_TARGET_NOT_FULLY_VISIBLE",
@@ -490,18 +494,25 @@
       );
     }
 
+    const inset = region ? REGION_FRAME_INSET_CSS_PX : 0;
+
     return {
       backgroundColor: getPageBackgroundColor(),
       bitmapViewportHeight: globalThis.innerHeight,
       bitmapViewportWidth: globalThis.innerWidth,
-      frame: { x, y, width, height },
+      frame: {
+        x: boxX + inset,
+        y: boxY + inset,
+        width: boxWidth - inset * 2,
+        height: boxHeight - inset * 2,
+      },
       mode: region ? "region" : "element",
       outputHeight: region
         ? metrics.documentHeight
-        : globalThis.innerHeight + (metrics.documentHeight - height),
+        : globalThis.innerHeight + (metrics.documentHeight - boxHeight),
       outputWidth: region
         ? metrics.documentWidth
-        : globalThis.innerWidth + (metrics.documentWidth - width),
+        : globalThis.innerWidth + (metrics.documentWidth - boxWidth),
     };
   }
 
@@ -672,6 +683,15 @@
         "The picked region is no longer scrollable.",
       );
     }
+    if (
+      element.clientWidth <= REGION_FRAME_INSET_CSS_PX * 2 ||
+      element.clientHeight <= REGION_FRAME_INSET_CSS_PX * 2
+    ) {
+      throw new ContentCaptureError(
+        "REGION_TARGET_INVALID",
+        "The picked region is too small to capture.",
+      );
+    }
 
     return prepareCaptureSession(element);
   }
@@ -689,6 +709,8 @@
 
     const root = document.documentElement;
     captureSession = {
+      mutationObserver: null,
+      mutations: 0,
       originalX: globalThis.scrollX,
       originalY: globalThis.scrollY,
       previousCaptureAttribute: root.getAttribute(CAPTURE_ATTRIBUTE),
@@ -716,6 +738,22 @@
       captureSession.sticky = positioned.sticky;
       neutralizeStickyElements();
       await waitForPageToSettle();
+
+      if (
+        captureSession.scrollTarget.mode === "element" &&
+        typeof globalThis.MutationObserver === "function"
+      ) {
+        const session = captureSession;
+        session.mutationObserver = new globalThis.MutationObserver(() => {
+          session.mutations += 1;
+        });
+        session.mutationObserver.observe(captureSession.scrollTarget.element, {
+          attributes: true,
+          characterData: true,
+          childList: true,
+          subtree: true,
+        });
+      }
       const metrics = getTargetMetrics(captureSession.scrollTarget);
       const capture = getCaptureDescriptor(
         captureSession.scrollTarget,
@@ -736,6 +774,16 @@
     } catch (error) {
       await cleanupCapture();
       throw error;
+    }
+  }
+
+  function setFrameIndicatorVisibility(visible) {
+    if (
+      captureSession &&
+      captureSession.frameIndicator &&
+      captureSession.frameIndicator.isConnected
+    ) {
+      captureSession.frameIndicator.style.display = visible ? "" : "none";
     }
   }
 
@@ -796,6 +844,33 @@
     }
 
     let actual = getTargetScroll(target);
+
+    if (segment.verifyOnly === true) {
+      setFrameIndicatorVisibility(true);
+
+      if (!positionSettled(actual)) {
+        throw new ContentCaptureError(
+          "SEGMENT_SCROLL_LOST",
+          "The scroll position drifted after the segment was captured.",
+          {
+            actualX: actual.x,
+            actualY: actual.y,
+            requestedX: segment.x,
+            requestedY: segment.y,
+          },
+        );
+      }
+
+      const verifiedMetrics = getTargetMetrics(target);
+      return {
+        actualX: actual.x,
+        actualY: actual.y,
+        capture: getCaptureDescriptor(target, verifiedMetrics, captureSession.region),
+        metrics: verifiedMetrics,
+        mutations: captureSession.mutations,
+      };
+    }
+
     let attempts = 0;
 
     for (let attempt = 0; attempt < MAX_SCROLL_ATTEMPTS; attempt += 1) {
@@ -834,12 +909,15 @@
       );
     }
 
+    setFrameIndicatorVisibility(false);
+
     const metrics = getTargetMetrics(target);
     return {
       actualX: actual.x,
       actualY: actual.y,
       capture: getCaptureDescriptor(target, metrics, captureSession.region),
       metrics,
+      mutations: captureSession.mutations,
     };
   }
 
@@ -861,6 +939,11 @@
     }
 
     attempt(() => setFixedVisibility(false));
+    attempt(() => {
+      if (session.mutationObserver) {
+        session.mutationObserver.disconnect();
+      }
+    });
     attempt(() => {
       if (session.frameIndicator && session.frameIndicator.isConnected) {
         session.frameIndicator.remove();

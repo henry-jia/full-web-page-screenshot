@@ -1,9 +1,11 @@
 (function installCaptureBackground() {
   "use strict";
 
+  const t = FwpsI18n.createBrowserTranslator(browser);
   const captureStates = new Map();
   const closedTabIds = new Set();
   const CAPTURE_INTERVAL_MS = 550;
+  const MAX_SEGMENT_CAPTURE_ATTEMPTS = 3;
   const RESTRICTED_HOSTS = new Set([
     "accounts-static.cdn.mozilla.net",
     "accounts.firefox.com",
@@ -38,7 +40,7 @@
       status: "idle",
       completed: 0,
       total: 0,
-      message: "準備好擷取目前頁面。",
+      message: t("capture_idle_message"),
     };
   }
 
@@ -60,13 +62,13 @@
     let text = "";
 
     if (state.status === "picking") {
-      text = "選取";
+      text = t("badge_picking");
     } else if (state.status === "capturing") {
       text = state.total > 0
         ? `${Math.round((state.completed / state.total) * 100)}%`
         : "…";
     } else if (state.status === "encoding") {
-      text = "輸出";
+      text = t("badge_encoding");
     } else if (state.status === "error") {
       color = BADGE_ERROR_COLOR;
       text = "!";
@@ -89,29 +91,30 @@
   }
 
   function userMessageFor(error) {
-    const messages = {
-      UNSUPPORTED_PAGE: "Firefox 不允許擷取這個頁面；請改用一般網站分頁。",
-      RESTRICTED_PAGE: "Firefox 出於安全考量，禁止所有擴充功能在 addons.mozilla.org 等官方網域運作；請改用一般網站分頁。",
-      CONTENT_SCRIPT_UNAVAILABLE: "無法讀取目前頁面；請重新載入一般網站後再試。",
-      TAB_NOT_ACTIVE: "擷取期間分頁已切換。請保持目標分頁在前景後重試。",
-      PAGE_SIZE_CHANGED: "頁面在擷取期間持續改變尺寸，為避免裁切已停止。",
-      SCROLL_POSITION_MISMATCH: "頁面阻止了精確捲動，為避免產生空白區已停止。",
-      SCROLL_TARGET_NOT_FULLY_VISIBLE: "捲動區域未完整顯示在視窗內（區域需小於視窗並完整可見），為避免漏拍已停止。",
-      REGION_TARGET_INVALID: "選取的捲動區域已失效（被移除或不再可捲動）；請重新選取。",
-      CANVAS_DIMENSION_EXCEEDED: "頁面太長或太寬，超過 Firefox 的安全圖片尺寸。",
-      CANVAS_AREA_EXCEEDED: "頁面像素量太大，為避免瀏覽器耗盡記憶體已停止。",
-      TOO_MANY_SEGMENTS: "頁面需要的截圖片段過多，為避免長時間佔用瀏覽器已停止。",
-      CAPTURE_ALREADY_ACTIVE: "這個分頁正在擷取中。",
-      DOWNLOAD_FAILED: "圖片已建立，但 Firefox 無法開始下載。",
-      CLEANUP_FAILED: "頁面狀態無法完整還原；請重新載入此分頁。",
+    const messageKeys = {
+      UNSUPPORTED_PAGE: "error_unsupported_page",
+      RESTRICTED_PAGE: "error_restricted_page",
+      CONTENT_SCRIPT_UNAVAILABLE: "error_content_script_unavailable",
+      TAB_NOT_ACTIVE: "error_tab_not_active",
+      PAGE_SIZE_CHANGED: "error_page_size_changed",
+      SCROLL_POSITION_MISMATCH: "error_scroll_position_mismatch",
+      SCROLL_TARGET_NOT_FULLY_VISIBLE: "error_scroll_target_not_fully_visible",
+      REGION_TARGET_INVALID: "error_region_target_invalid",
+      CANVAS_DIMENSION_EXCEEDED: "error_canvas_dimension_exceeded",
+      CANVAS_AREA_EXCEEDED: "error_canvas_area_exceeded",
+      TOO_MANY_SEGMENTS: "error_too_many_segments",
+      CAPTURE_ALREADY_ACTIVE: "error_capture_already_active",
+      DOWNLOAD_FAILED: "error_download_failed",
+      CLEANUP_FAILED: "error_cleanup_failed",
+      SEGMENT_SCROLL_LOST: "error_segment_scroll_lost",
     };
 
-    const message = messages[error && error.code] || "擷取失敗。請重新載入頁面後再試。";
+    const code = error && error.code;
+    const message = t(messageKeys[code] || "error_capture_failed");
     const details = error && error.details;
 
     if (
-      error &&
-      error.code === "SCROLL_POSITION_MISMATCH" &&
+      code === "SCROLL_POSITION_MISMATCH" &&
       details &&
       Number.isFinite(details.requestedX) &&
       Number.isFinite(details.requestedY) &&
@@ -125,14 +128,24 @@
         : "unknown";
       const attempts = Number.isInteger(details.attempts) ? details.attempts : 0;
       const connection = details.connected === true
-        ? "已連線"
+        ? t("diag_target_connected")
         : details.connected === false
-          ? "已斷線"
-          : "狀態未知";
-      return `${message} 診斷：${mode}，要求 (${details.requestedX}, ${details.requestedY})，實際 (${details.actualX}, ${details.actualY})，上限 (${details.maxX}, ${details.maxY})，嘗試 ${attempts} 次，target ${connection}。`;
+          ? t("diag_target_disconnected")
+          : t("diag_target_unknown");
+      return message + t("diag_scroll_mismatch", [
+        mode,
+        details.requestedX,
+        details.requestedY,
+        details.actualX,
+        details.actualY,
+        details.maxX,
+        details.maxY,
+        attempts,
+        connection,
+      ]);
     }
 
-    if (error && error.code === "PAGE_SIZE_CHANGED" && details) {
+    if (code === "PAGE_SIZE_CHANGED" && details) {
       const geometryFields = [
         "expectedDocumentWidth",
         "expectedDocumentHeight",
@@ -145,7 +158,16 @@
       ];
 
       if (geometryFields.every((field) => Number.isFinite(details[field]))) {
-        return `${message} 診斷：文件 ${details.expectedDocumentWidth} × ${details.expectedDocumentHeight} → ${details.actualDocumentWidth} × ${details.actualDocumentHeight}，視窗 ${details.expectedViewportWidth} × ${details.expectedViewportHeight} → ${details.actualViewportWidth} × ${details.actualViewportHeight}。`;
+        return message + t("diag_page_size_document", [
+          details.expectedDocumentWidth,
+          details.expectedDocumentHeight,
+          details.actualDocumentWidth,
+          details.actualDocumentHeight,
+          details.expectedViewportWidth,
+          details.expectedViewportHeight,
+          details.actualViewportWidth,
+          details.actualViewportHeight,
+        ]);
       }
 
       const expectedFrame = details.expectedFrame;
@@ -165,7 +187,16 @@
 
       if (frameValues.length === 8 && frameValues.every(Number.isFinite)) {
         const format = (value) => Math.round(value * 100) / 100;
-        return `${message} 診斷：區域框 (${format(expectedFrame.x)}, ${format(expectedFrame.y)}, ${format(expectedFrame.width)} × ${format(expectedFrame.height)}) → (${format(actualFrame.x)}, ${format(actualFrame.y)}, ${format(actualFrame.width)} × ${format(actualFrame.height)})。`;
+        return message + t("diag_page_size_frame", [
+          format(expectedFrame.x),
+          format(expectedFrame.y),
+          format(expectedFrame.width),
+          format(expectedFrame.height),
+          format(actualFrame.x),
+          format(actualFrame.y),
+          format(actualFrame.width),
+          format(actualFrame.height),
+        ]);
       }
     }
 
@@ -600,26 +631,62 @@
       : descriptor.bitmapViewportHeight;
 
     for (const segment of plan.segments) {
-      const remainingDelay = CAPTURE_INTERVAL_MS - (Date.now() - lastCaptureTime);
-      if (remainingDelay > 0) {
-        await wait(remainingDelay);
+      let image = null;
+      let scrolled = null;
+
+      for (let attempt = 1; attempt <= MAX_SEGMENT_CAPTURE_ATTEMPTS; attempt += 1) {
+        const remainingDelay = CAPTURE_INTERVAL_MS - (Date.now() - lastCaptureTime);
+        if (remainingDelay > 0) {
+          await wait(remainingDelay);
+        }
+
+        await assertTargetTabIsActive(tab.id, tab.windowId);
+        scrolled = await sendToContent(tab.id, {
+          type: "SCROLL_CAPTURE",
+          segment,
+        });
+        assertPageSizeStable(plan, scrolled.metrics);
+        assertCaptureDescriptorStable(capture, scrolled.capture);
+
+        await assertTargetTabIsActive(tab.id, tab.windowId);
+        const dataUrl = await browser.tabs.captureVisibleTab(tab.windowId, {
+          format: "png",
+        });
+        lastCaptureTime = Date.now();
+        await assertTargetTabIsActive(tab.id, tab.windowId);
+        image = await loadImage(dataUrl);
+
+        let segmentLost = false;
+        try {
+          const verified = await sendToContent(tab.id, {
+            type: "SCROLL_CAPTURE",
+            segment: { ...segment, verifyOnly: true },
+          });
+          assertPageSizeStable(plan, verified.metrics);
+          assertCaptureDescriptorStable(capture, verified.capture);
+          segmentLost =
+            scrolled.mutations !== undefined &&
+            verified.mutations !== scrolled.mutations;
+        } catch (error) {
+          if (error && error.code === "SEGMENT_SCROLL_LOST") {
+            segmentLost = true;
+          } else {
+            throw error;
+          }
+        }
+
+        if (!segmentLost) {
+          break;
+        }
+
+        if (attempt === MAX_SEGMENT_CAPTURE_ATTEMPTS) {
+          throw new CaptureError(
+            "SEGMENT_SCROLL_LOST",
+            "The page kept scrolling or updating itself during capture.",
+            { segmentIndex: segment.index },
+          );
+        }
       }
-
-      await assertTargetTabIsActive(tab.id, tab.windowId);
-      const scrolled = await sendToContent(tab.id, {
-        type: "SCROLL_CAPTURE",
-        segment,
-      });
-      assertPageSizeStable(plan, scrolled.metrics);
-      assertCaptureDescriptorStable(capture, scrolled.capture);
-
-      await assertTargetTabIsActive(tab.id, tab.windowId);
-      const dataUrl = await browser.tabs.captureVisibleTab(tab.windowId, {
-        format: "png",
-      });
-      lastCaptureTime = Date.now();
-      await assertTargetTabIsActive(tab.id, tab.windowId);
-      const image = await loadImage(dataUrl);
 
       if (!stitcher) {
         stitcher = createStitcher(plan, image, capture);
@@ -640,7 +707,7 @@
         status: "capturing",
         completed: segment.index + 1,
         total: plan.segments.length,
-        message: `正在擷取第 ${segment.index + 1} / ${plan.segments.length} 段。`,
+        message: t("capture_progress", [segment.index + 1, plan.segments.length]),
       });
     }
 
@@ -654,12 +721,12 @@
 
   const FULL_PAGE_CAPTURE = Object.freeze({
     filenamePrefix: "full-page",
-    noun: "完整頁面",
+    nounKey: "noun_full_page",
     prepareType: "PREPARE_CAPTURE",
   });
   const REGION_CAPTURE = Object.freeze({
     filenamePrefix: "region",
-    noun: "區域截圖",
+    nounKey: "noun_region",
     prepareType: "PREPARE_REGION_CAPTURE",
   });
 
@@ -702,14 +769,14 @@
         status: "capturing",
         completed: 0,
         total: plan.segments.length,
-        message: `準備擷取 ${plan.segments.length} 個分段。`,
+        message: t("capture_prepare", [plan.segments.length]),
       });
 
       const stitched = await captureSegments(tab, plan, preparedPage.capture);
 
       updateCaptureState(tab.id, {
         status: "encoding",
-        message: "正在建立 PNG。",
+        message: t("capture_encoding"),
       });
       const blob = await canvasToBlob(stitched.canvas);
 
@@ -727,8 +794,12 @@
         completed: plan.segments.length,
         total: plan.segments.length,
         message: stitched.outputScaled
-          ? `${options.noun}已自動縮放至 ${stitched.outputWidth} × ${stitched.outputHeight} 像素並儲存。`
-          : `${options.noun}已儲存到下載資料夾。`,
+          ? t("capture_success_scaled", [
+              t(options.nounKey),
+              stitched.outputWidth,
+              stitched.outputHeight,
+            ])
+          : t("capture_success_saved", [t(options.nounKey)]),
         filename,
         downloadId,
         outputHeight: stitched.outputHeight,
@@ -776,7 +847,7 @@
       status: "capturing",
       completed: 0,
       total: 0,
-      message: "正在分析頁面尺寸。",
+      message: t("capture_analyzing_page"),
       filename: null,
       downloadId: null,
       errorCode: null,
@@ -823,7 +894,7 @@
       status: "capturing",
       completed: 0,
       total: 0,
-      message: "正在準備區域選取。",
+      message: t("capture_preparing_picker"),
       filename: null,
       downloadId: null,
       errorCode: null,
@@ -859,7 +930,7 @@
         status: "picking",
         completed: 0,
         total: 0,
-        message: "請在頁面中點擊要擷取的捲動區域，按 Esc 取消。",
+        message: t("picker_prompt"),
       });
     } catch (error) {
       updateCaptureState(tab.id, {
@@ -880,7 +951,7 @@
       status: "capturing",
       completed: 0,
       total: 0,
-      message: "正在分析區域尺寸。",
+      message: t("capture_analyzing_region"),
     });
     tryOpenPopup();
 
@@ -915,7 +986,7 @@
       status: "idle",
       completed: 0,
       total: 0,
-      message: "已取消區域選取。",
+      message: t("pick_cancelled"),
     });
 
     return { dismissed: true };

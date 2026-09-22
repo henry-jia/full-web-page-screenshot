@@ -1,8 +1,9 @@
 {
   "manifest_version": 2,
-  "name": "Full Web Page Screenshot",
-  "version": "0.1.6",
-  "description": "Capture the complete scrollable area of the active page as a local PNG.",
+  "name": "__MSG_extension_name__",
+  "version": "0.1.7",
+  "description": "__MSG_extension_description__",
+  "default_locale": "zh_TW",
   "permissions": [
     "activeTab",
     "downloads"
@@ -10,12 +11,13 @@
   "background": {
     "scripts": [
       "capture-plan.js",
+      "i18n.js",
       "background.js"
     ],
     "persistent": true
   },
   "browser_action": {
-    "default_title": "Capture full page",
+    "default_title": "__MSG_browser_action_title__",
     "default_popup": "popup/popup.html",
     "default_icon": "icons/capture.svg"
   },

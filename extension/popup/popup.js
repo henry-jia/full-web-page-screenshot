@@ -1,6 +1,7 @@
 (function installCapturePopup() {
   "use strict";
 
+  const t = FwpsI18n.createBrowserTranslator(browser);
   const captureButton = document.getElementById("capture-button");
   const regionButton = document.getElementById("region-button");
   const statusPanel = document.getElementById("status-panel");
@@ -12,14 +13,28 @@
   let activeTabId = null;
   let pollTimer = null;
 
-  const statusLabels = {
-    idle: "待命",
-    picking: "選取區域",
-    capturing: "擷取中",
-    encoding: "正在輸出",
-    success: "完成",
-    error: "無法完成",
+  const statusLabelKeys = {
+    idle: "status_idle",
+    picking: "status_picking",
+    capturing: "status_capturing",
+    encoding: "status_encoding",
+    success: "status_success",
+    error: "status_error",
   };
+
+  function localizeStaticText() {
+    try {
+      document.documentElement.lang = browser.i18n.getUILanguage();
+    } catch {
+    }
+
+    for (const element of document.querySelectorAll("[data-i18n]")) {
+      element.textContent = t(element.dataset.i18n);
+    }
+    for (const element of document.querySelectorAll("[data-i18n-aria-label]")) {
+      element.setAttribute("aria-label", t(element.dataset.i18nAriaLabel));
+    }
+  }
 
   function isBusy(state) {
     return (
@@ -34,17 +49,18 @@
     const total = Number.isFinite(state.total) ? state.total : 0;
     const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
     const busy = isBusy(state);
+    const statusKey = statusLabelKeys[state.status];
 
     statusPanel.dataset.state = state.status;
-    statusLabel.textContent = statusLabels[state.status] || "狀態";
-    statusMessage.textContent = state.message || "擷取狀態暫時無法取得。";
+    statusLabel.textContent = statusKey ? t(statusKey) : t("status_label_unknown");
+    statusMessage.textContent = state.message || t("status_message_unavailable");
     segmentCount.textContent = `${completed} / ${total}`;
     captureButton.disabled = busy;
     captureButton.textContent = state.status === "picking"
-      ? "等待選取區域"
+      ? t("button_waiting_pick")
       : busy
-        ? "擷取進行中"
-        : "擷取完整頁面";
+        ? t("button_busy")
+        : t("button_capture_full");
     regionButton.disabled = busy;
     progressTrack.hidden = !busy || total === 0;
     progressTrack.setAttribute("aria-valuenow", String(progress));
@@ -72,7 +88,7 @@
         status: "error",
         completed: 0,
         total: 0,
-        message: "無法連接擴充套件背景程序。請重新開啟面板。",
+        message: t("error_background_unreachable"),
       });
     }
   }
@@ -104,7 +120,7 @@
         status: "error",
         completed: 0,
         total: 0,
-        message: "無法啟動擷取。請重新載入頁面後再試。",
+        message: t("error_start_capture"),
       });
     }
   }
@@ -130,12 +146,14 @@
         status: "error",
         completed: 0,
         total: 0,
-        message: "無法啟動區域選取。請重新載入頁面後再試。",
+        message: t("error_start_region"),
       });
     }
   }
 
   async function initialize() {
+    localizeStaticText();
+
     try {
       const tabs = await browser.tabs.query({ active: true, currentWindow: true });
       if (tabs.length !== 1 || !Number.isInteger(tabs[0].id)) {
@@ -157,7 +175,7 @@
         status: "error",
         completed: 0,
         total: 0,
-        message: "找不到可擷取的目前分頁。",
+        message: t("error_no_active_tab"),
       });
     }
   }
@@ -172,4 +190,3 @@
 
   initialize();
 })();
-

@@ -1,5 +1,45 @@
 # Change Log
 
+## [20260922] Release version 0.1.7: WebExtension i18n and region capture stitching fixes
+
+- **類型**：Release
+- **影響範圍**：extension, tests, docs
+- **內容**：介面全面改為 WebExtension i18n（`zh_TW` 預設 + `en`);修復捲動區域截取的三類缺陷——頁面 JS 中途改寫內容導致的錯位重複（截取後被動校驗 + 分段重試 + `SEGMENT_SCROLL_LOST` fail closed)、藍色邊框指示器邊緣被取整帶入輸出（截取瞬間隱藏指示器）、框外像素與圓角痕漏入接縫（裁剪框內縮 2 CSS px);81 項測試通過。
+- **關聯文件**：REQ-20260921-001, REQ-20260921-002, 220
+- **操作人**：Kimi Code
+
+## [20260922] Inset the region crop frame so rounding can never leak outside pixels
+
+- **類型**：Bug Fix
+- **影響範圍**：extension, tests
+- **內容**：區域截圖分段接縫仍有細線與圓角痕——上一輪隱藏指示器解決了藍線，但 CSS→物理像素四捨五入（dpr=0.9 時邊界最多內侵 ~0.56 CSS px）仍會把**區域框外**的像素（框外背景色、框的 border-radius 弧線區）帶進每個分段的裁剪邊緣；因為每個分段都裁同一個視口矩形，框頂/框底的邊緣行會在每條接縫重複出現。現在 region 模式的裁剪框固定內縮 2 CSS px（`REGION_FRAME_INSET_CSS_PX`,element 模式與整頁模式不受影響）,`getTargetMetrics`/`getCaptureDescriptor` 同步以內縮後的尺寸規劃分段與輸出，取整誤差永遠落在框內內容區；代價是輸出少一圈 2px（實務上落在元素 padding 區）；過小的區域（client 尺寸 ≤ 4px）fail closed 為 `REGION_TARGET_INVALID`。相關測試數值断言更新；81 項測試通過。
+- **關聯文件**：REQ-20260921-001, 220
+- **操作人**：Kimi Code
+
+## [20260922] Keep the region frame indicator out of the captured pixels
+
+- **類型**：Bug Fix
+- **影響範圍**：extension, tests
+- **內容**：區域截圖的分段接縫處出現細藍線——藍色邊框指示器雖外擴於區域框，但 CSS→物理像素取整（尤其在 90% 縮放、dpr=0.9 時，邊界最多內侵 ~0.56 CSS px）會把指示器邊框的邊緣像素帶進每個分段的裁剪範圍；整頁截取因無指示器而不受影響。現在 content script 在回應 SCROLL_CAPTURE 前隱藏指示器（`display:none`），使 captureVisibleTab 拍到的畫面保證不含指示器；verifyOnly 校驗時再恢復顯示，使用者看到的指示器幾乎不中斷；整頁模式無指示器、行為不變。新增 1 項 content 測試鎖定「截取時隱藏、校驗後復顯」；81 項測試通過。
+- **關聯文件**：REQ-20260921-001, 220
+- **操作人**：Kimi Code
+
+## [20260922] Re-verify each captured segment and retry when the page moves mid-capture
+
+- **類型**：Bug Fix
+- **影響範圍**：extension, tests
+- **內容**：修復捲動區域截取偶發錯位／內容重複——頁面自身的 JS（如 MusicForge 每 2.5–9 秒的 poll 重寫 `#d-lyrics` 的 innerHTML）會在「捲動驗證通過」與「captureVisibleTab 截圖」之間把捲動容器 scrollTop 歸零，導致某些分段拍到頂部內容。現在所有截取模式在截圖後立刻向 content script 做一次被動校驗（`SCROLL_CAPTURE` + `verifyOnly`）：核對捲動落點（沿用既有容差）、頁面幾何與 frame 穩定性，element/region 模式另以 MutationObserver 計數偵測截取窗口內的子樹改寫；漂移的分段不會繪入畫布，整段重捲重拍，最多 3 次，仍不穩定則 fail closed 並以新錯誤碼 `SEGMENT_SCROLL_LOST`（已加入 zh_TW/en 文案）回報；清理時保證斷開 observer。新增 3 項 background 測試與 2 項 content 測試；80 項測試通過。
+- **關聯文件**：REQ-20260921-001, 220
+- **操作人**：Kimi Code
+
+## [20260922] Localize the extension with WebExtension i18n (zh_TW default + en)
+
+- **類型**：Feature
+- **影響範圍**：extension, tests, docs
+- **內容**：所有使用者可見字串遷移至 `extension/_locales/`（`zh_TW` 為 `default_locale`，新增 `en`）；manifest 的 name/description/default_title 改用 `__MSG_` 佔位；popup 靜態文案以 `data-i18n` 屬性驅動，popup.js 與 background.js 的狀態、進度、錯誤與診斷訊息全部改由 `browser.i18n.getMessage` 取得，動態訊息改用 `$n` placeholder；新增獨立 `extension/i18n.js`（查表、`$n` 代入、缺鍵 fail-soft 回退，可比照 capture-plan.js 在 Node 測試）；新增 `tests/i18n.test.js` 覆蓋跨語系 key parity、placeholder 一致性、程式碼引用鍵完整性與查表回退；background 測試 harness 的 `browser.i18n` mock 改讀真實 zh_TW catalog；CLAUDE.md 文案規則更新為 i18n 架構；75 項測試通過。
+- **關聯文件**：REQ-20260921-002, 220
+- **操作人**：Kimi Code
+
 ## [20260921] Mirror capture progress to the toolbar badge
 
 - **類型**：Feature

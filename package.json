@@ -7,7 +7,7 @@
   "scripts": {
     "build": "pwsh -NoProfile -File scripts/build-release.ps1",
     "test": "node --test",
-    "check": "node --check extension/capture-plan.js && node --check extension/background.js && node --check extension/content-script.js && node --check extension/popup/popup.js"
+    "check": "node --check extension/capture-plan.js && node --check extension/i18n.js && node --check extension/background.js && node --check extension/content-script.js && node --check extension/popup/popup.js"
   },
   "engines": {
     "node": ">=20"

@@ -661,26 +661,26 @@ test("region picker highlights the scrollable ancestor and region prepare crops 
   const prepared = await harness.send({ type: "PREPARE_REGION_CAPTURE" });
   assert.equal(prepared.ok, true);
   assert.equal(prepared.value.capture.mode, "region");
-  assert.equal(prepared.value.capture.outputWidth, 600);
-  assert.equal(prepared.value.capture.outputHeight, 1500);
+  assert.equal(prepared.value.capture.outputWidth, 596);
+  assert.equal(prepared.value.capture.outputHeight, 1496);
   assert.deepEqual(JSON.parse(JSON.stringify(prepared.value.capture.frame)), {
-    x: 200,
-    y: 100,
-    width: 600,
-    height: 500,
+    x: 202,
+    y: 102,
+    width: 596,
+    height: 496,
   });
-  assert.equal(prepared.value.metrics.documentHeight, 1500);
-  assert.equal(prepared.value.metrics.viewportHeight, 500);
+  assert.equal(prepared.value.metrics.documentHeight, 1496);
+  assert.equal(prepared.value.metrics.viewportHeight, 496);
 
   const indicator = harness.rootChildren[harness.rootChildren.length - 1];
   assert.equal(indicator.id, "__fwps-region-frame");
   assert.equal(indicator.style.boxSizing, "border-box");
   assert.equal(indicator.style.border, "3px solid rgba(76, 154, 255, 0.95)");
   assert.equal(indicator.style.background, "transparent");
-  assert.equal(indicator.style.left, "197px");
-  assert.equal(indicator.style.top, "97px");
-  assert.equal(indicator.style.width, "606px");
-  assert.equal(indicator.style.height, "506px");
+  assert.equal(indicator.style.left, "199px");
+  assert.equal(indicator.style.top, "99px");
+  assert.equal(indicator.style.width, "602px");
+  assert.equal(indicator.style.height, "502px");
 
   const scrolled = await harness.send({
     type: "SCROLL_CAPTURE",
@@ -688,13 +688,13 @@ test("region picker highlights the scrollable ancestor and region prepare crops 
   });
   assert.equal(scrolled.ok, true);
   assert.equal(scrolled.value.capture.mode, "region");
-  assert.equal(scrolled.value.capture.outputWidth, 600);
-  assert.equal(scrolled.value.capture.outputHeight, 1500);
+  assert.equal(scrolled.value.capture.outputWidth, 596);
+  assert.equal(scrolled.value.capture.outputHeight, 1496);
   assert.deepEqual(JSON.parse(JSON.stringify(scrolled.value.capture.frame)), {
-    x: 200,
-    y: 100,
-    width: 600,
-    height: 500,
+    x: 202,
+    y: 102,
+    width: 596,
+    height: 496,
   });
 
   const cleaned = await harness.send({ type: "CLEANUP_CAPTURE" });
@@ -780,7 +780,7 @@ test("region capture scrolls a partially off-screen region into view before prep
   assert.equal(prepared.ok, true);
   assert.ok(harness.events.includes("windowScrollBy:0,600"));
   assert.equal(harness.context.scrollY, 634);
-  assert.equal(prepared.value.capture.frame.y, 100);
+  assert.equal(prepared.value.capture.frame.y, 102);
 
   const cleaned = await harness.send({ type: "CLEANUP_CAPTURE" });
   assert.equal(cleaned.ok, true);
@@ -817,4 +817,79 @@ test("a full-page capture does not create a region frame indicator", async () =>
     false,
   );
   await harness.send({ type: "CLEANUP_CAPTURE" });
+});
+
+test("a verify-only segment read passes while the scroll position is settled", async () => {
+  const harness = createContentHarness();
+  await harness.send({ type: "PREPARE_CAPTURE" });
+  await harness.send({
+    type: "SCROLL_CAPTURE",
+    segment: { index: 0, x: 0, y: 0 },
+  });
+
+  const verified = await harness.send({
+    type: "SCROLL_CAPTURE",
+    segment: { index: 0, x: 0, y: 0, verifyOnly: true },
+  });
+
+  assert.equal(verified.ok, true);
+  assert.equal(verified.value.actualY, 0);
+  assert.equal(verified.value.mutations, 0);
+  const cleaned = await harness.send({ type: "CLEANUP_CAPTURE" });
+  assert.equal(cleaned.ok, true);
+});
+
+test("a verify-only segment read reports drift after the page scrolls itself", async () => {
+  const harness = createContentHarness();
+  await harness.send({ type: "PREPARE_CAPTURE" });
+  await harness.send({
+    type: "SCROLL_CAPTURE",
+    segment: { index: 0, x: 0, y: 0 },
+  });
+
+  harness.context.scrollY = 42;
+  const verified = await harness.send({
+    type: "SCROLL_CAPTURE",
+    segment: { index: 0, x: 0, y: 0, verifyOnly: true },
+  });
+
+  assert.equal(verified.ok, false);
+  assert.equal(verified.error.code, "SEGMENT_SCROLL_LOST");
+  const cleaned = await harness.send({ type: "CLEANUP_CAPTURE" });
+  assert.equal(cleaned.ok, true);
+  assert.equal(harness.context.scrollY, 34);
+});
+
+test("the region frame indicator is hidden during capture and shown again after verification", async () => {
+  const harness = createContentHarness({ nestedScroller: true });
+  await harness.send({ type: "ENTER_REGION_PICKER" });
+  harness.dispatch("click", {
+    target: { parentElement: harness.scroller },
+    preventDefault() {},
+    stopPropagation() {},
+  });
+
+  const prepared = await harness.send({ type: "PREPARE_REGION_CAPTURE" });
+  assert.equal(prepared.ok, true);
+  const indicator = harness.rootChildren[harness.rootChildren.length - 1];
+  assert.equal(indicator.id, "__fwps-region-frame");
+  assert.notEqual(indicator.style.display, "none");
+
+  const scrolled = await harness.send({
+    type: "SCROLL_CAPTURE",
+    segment: { index: 0, x: 0, y: 0 },
+  });
+  assert.equal(scrolled.ok, true);
+  assert.equal(indicator.style.display, "none");
+
+  const verified = await harness.send({
+    type: "SCROLL_CAPTURE",
+    segment: { index: 0, x: 0, y: 0, verifyOnly: true },
+  });
+  assert.equal(verified.ok, true);
+  assert.equal(indicator.style.display, "");
+
+  const cleaned = await harness.send({ type: "CLEANUP_CAPTURE" });
+  assert.equal(cleaned.ok, true);
+  assert.equal(indicator.isConnected, false);
 });

@@ -1,0 +1,189 @@
+{
+  "extension_name": {
+    "message": "Full Web Page Screenshot"
+  },
+  "extension_description": {
+    "message": "擷取目前分頁的完整捲動範圍，在本機拼接並輸出為 PNG。"
+  },
+  "browser_action_title": {
+    "message": "擷取完整頁面"
+  },
+  "popup_title": {
+    "message": "完整頁面截圖"
+  },
+  "popup_intro": {
+    "message": "自動捲動目前分頁，拼接後直接下載 PNG。"
+  },
+  "button_capture_full": {
+    "message": "擷取完整頁面"
+  },
+  "button_capture_region": {
+    "message": "擷取捲動區域"
+  },
+  "button_waiting_pick": {
+    "message": "等待選取區域"
+  },
+  "button_busy": {
+    "message": "擷取進行中"
+  },
+  "progress_aria_label": {
+    "message": "擷取進度"
+  },
+  "privacy_note": {
+    "message": "影像只在本機處理，不會上傳。"
+  },
+  "capture_idle_message": {
+    "message": "準備好擷取目前頁面。"
+  },
+  "status_idle": {
+    "message": "待命"
+  },
+  "status_picking": {
+    "message": "選取區域"
+  },
+  "status_capturing": {
+    "message": "擷取中"
+  },
+  "status_encoding": {
+    "message": "正在輸出"
+  },
+  "status_success": {
+    "message": "完成"
+  },
+  "status_error": {
+    "message": "無法完成"
+  },
+  "status_label_unknown": {
+    "message": "狀態"
+  },
+  "status_message_unavailable": {
+    "message": "擷取狀態暫時無法取得。"
+  },
+  "error_background_unreachable": {
+    "message": "無法連接擴充套件背景程序。請重新開啟面板。"
+  },
+  "error_start_capture": {
+    "message": "無法啟動擷取。請重新載入頁面後再試。"
+  },
+  "error_start_region": {
+    "message": "無法啟動區域選取。請重新載入頁面後再試。"
+  },
+  "error_no_active_tab": {
+    "message": "找不到可擷取的目前分頁。"
+  },
+  "badge_picking": {
+    "message": "選取"
+  },
+  "badge_encoding": {
+    "message": "輸出"
+  },
+  "error_unsupported_page": {
+    "message": "Firefox 不允許擷取這個頁面；請改用一般網站分頁。"
+  },
+  "error_restricted_page": {
+    "message": "Firefox 出於安全考量，禁止所有擴充功能在 addons.mozilla.org 等官方網域運作；請改用一般網站分頁。"
+  },
+  "error_content_script_unavailable": {
+    "message": "無法讀取目前頁面；請重新載入一般網站後再試。"
+  },
+  "error_tab_not_active": {
+    "message": "擷取期間分頁已切換。請保持目標分頁在前景後重試。"
+  },
+  "error_page_size_changed": {
+    "message": "頁面在擷取期間持續改變尺寸，為避免裁切已停止。"
+  },
+  "error_scroll_position_mismatch": {
+    "message": "頁面阻止了精確捲動，為避免產生空白區已停止。"
+  },
+  "error_scroll_target_not_fully_visible": {
+    "message": "捲動區域未完整顯示在視窗內（區域需小於視窗並完整可見），為避免漏拍已停止。"
+  },
+  "error_region_target_invalid": {
+    "message": "選取的捲動區域已失效（被移除或不再可捲動）；請重新選取。"
+  },
+  "error_canvas_dimension_exceeded": {
+    "message": "頁面太長或太寬，超過 Firefox 的安全圖片尺寸。"
+  },
+  "error_canvas_area_exceeded": {
+    "message": "頁面像素量太大，為避免瀏覽器耗盡記憶體已停止。"
+  },
+  "error_too_many_segments": {
+    "message": "頁面需要的截圖片段過多，為避免長時間佔用瀏覽器已停止。"
+  },
+  "error_capture_already_active": {
+    "message": "這個分頁正在擷取中。"
+  },
+  "error_download_failed": {
+    "message": "圖片已建立，但 Firefox 無法開始下載。"
+  },
+  "error_cleanup_failed": {
+    "message": "頁面狀態無法完整還原；請重新載入此分頁。"
+  },
+  "error_segment_scroll_lost": {
+    "message": "擷取期間頁面內容自行捲動或更新，重試後仍不穩定，為避免拼接錯位已停止；請稍後再試。"
+  },
+  "error_capture_failed": {
+    "message": "擷取失敗。請重新載入頁面後再試。"
+  },
+  "diag_scroll_mismatch": {
+    "message": " 診斷：$1，要求 ($2, $3)，實際 ($4, $5)，上限 ($6, $7)，嘗試 $8 次，target $9。",
+    "description": "$1 scroll mode; $2/$3 requested x/y; $4/$5 actual x/y; $6/$7 max x/y; $8 attempts; $9 connection state"
+  },
+  "diag_target_connected": {
+    "message": "已連線"
+  },
+  "diag_target_disconnected": {
+    "message": "已斷線"
+  },
+  "diag_target_unknown": {
+    "message": "狀態未知"
+  },
+  "diag_page_size_document": {
+    "message": " 診斷：文件 $1 × $2 → $3 × $4，視窗 $5 × $6 → $7 × $8。",
+    "description": "$1..$4 document width/height before → after; $5..$8 viewport width/height before → after"
+  },
+  "diag_page_size_frame": {
+    "message": " 診斷：區域框 ($1, $2, $3 × $4) → ($5, $6, $7 × $8)。",
+    "description": "$1..$4 region frame x, y, width × height before; $5..$8 after"
+  },
+  "capture_progress": {
+    "message": "正在擷取第 $1 / $2 段。",
+    "description": "$1 current segment index; $2 total segments"
+  },
+  "capture_prepare": {
+    "message": "準備擷取 $1 個分段。",
+    "description": "$1 total segments"
+  },
+  "capture_encoding": {
+    "message": "正在建立 PNG。"
+  },
+  "capture_success_saved": {
+    "message": "$1已儲存到下載資料夾。",
+    "description": "$1 capture noun (full page or region capture)"
+  },
+  "capture_success_scaled": {
+    "message": "$1已自動縮放至 $2 × $3 像素並儲存。",
+    "description": "$1 capture noun; $2 final width; $3 final height"
+  },
+  "noun_full_page": {
+    "message": "完整頁面"
+  },
+  "noun_region": {
+    "message": "區域截圖"
+  },
+  "capture_analyzing_page": {
+    "message": "正在分析頁面尺寸。"
+  },
+  "capture_preparing_picker": {
+    "message": "正在準備區域選取。"
+  },
+  "picker_prompt": {
+    "message": "請在頁面中點擊要擷取的捲動區域，按 Esc 取消。"
+  },
+  "capture_analyzing_region": {
+    "message": "正在分析區域尺寸。"
+  },
+  "pick_cancelled": {
+    "message": "已取消區域選取。"
+  }
+}
