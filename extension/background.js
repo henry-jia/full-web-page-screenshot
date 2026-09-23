@@ -6,6 +6,7 @@
   const closedTabIds = new Set();
   const CAPTURE_INTERVAL_MS = 550;
   const MAX_SEGMENT_CAPTURE_ATTEMPTS = 3;
+  const THUMBNAIL_MAX_EDGE_PX = 240;
   const RESTRICTED_HOSTS = new Set([
     "accounts-static.cdn.mozilla.net",
     "accounts.firefox.com",
@@ -337,6 +338,55 @@
         },
       );
     }
+  }
+
+  function releaseCaptureImage(tabId) {
+    const previous = captureStates.get(tabId);
+    if (previous && previous.imageUrl) {
+      try {
+        URL.revokeObjectURL(previous.imageUrl);
+      } catch {
+      }
+    }
+  }
+
+  function createThumbnail(canvas) {
+    const scale = Math.min(
+      1,
+      THUMBNAIL_MAX_EDGE_PX / Math.max(canvas.width, canvas.height),
+    );
+    const thumbnailCanvas = document.createElement("canvas");
+    thumbnailCanvas.width = Math.max(1, Math.round(canvas.width * scale));
+    thumbnailCanvas.height = Math.max(1, Math.round(canvas.height * scale));
+    const context = thumbnailCanvas.getContext("2d");
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(
+      canvas,
+      0,
+      0,
+      thumbnailCanvas.width,
+      thumbnailCanvas.height,
+    );
+    return thumbnailCanvas.toDataURL("image/png");
+  }
+
+  async function openEditor(tabId) {
+    const state = Number.isInteger(tabId) ? getCaptureState(tabId) : null;
+    if (!state || !state.imageUrl) {
+      return { accepted: false };
+    }
+
+    const query =
+      `?src=${encodeURIComponent(state.imageUrl)}` +
+      `&name=${encodeURIComponent(state.filename || "capture.png")}`;
+    await browser.windows.create({
+      url: `${browser.runtime.getURL("editor/editor.html")}${query}`,
+      type: "popup",
+      width: 1200,
+      height: 840,
+    });
+    return { accepted: true };
   }
 
   async function downloadBlob(blob, filename) {
@@ -789,6 +839,16 @@
         options.filenamePrefix,
       );
       const downloadId = await downloadBlob(blob, filename);
+
+      let imageUrl = null;
+      let thumbnail = null;
+      try {
+        imageUrl = URL.createObjectURL(blob);
+        thumbnail = createThumbnail(stitched.canvas);
+      } catch (previewError) {
+        console.warn("[fwps] preview generation failed", previewError);
+      }
+
       updateCaptureState(tab.id, {
         status: "success",
         completed: plan.segments.length,
@@ -802,6 +862,8 @@
           : t("capture_success_saved", [t(options.nounKey)]),
         filename,
         downloadId,
+        imageUrl,
+        thumbnail,
         outputHeight: stitched.outputHeight,
         outputScaled: stitched.outputScaled,
         outputWidth: stitched.outputWidth,
@@ -843,6 +905,7 @@
       }
     }
 
+    releaseCaptureImage(tabId);
     updateCaptureState(tabId, {
       status: "capturing",
       completed: 0,
@@ -850,6 +913,8 @@
       message: t("capture_analyzing_page"),
       filename: null,
       downloadId: null,
+      imageUrl: null,
+      thumbnail: null,
       errorCode: null,
       errorDetails: null,
       outputHeight: null,
@@ -890,6 +955,7 @@
       return { accepted: false, state: current };
     }
 
+    releaseCaptureImage(tabId);
     updateCaptureState(tabId, {
       status: "capturing",
       completed: 0,
@@ -897,6 +963,8 @@
       message: t("capture_preparing_picker"),
       filename: null,
       downloadId: null,
+      imageUrl: null,
+      thumbnail: null,
       errorCode: null,
       errorDetails: null,
       outputHeight: null,
@@ -993,6 +1061,7 @@
   }
 
   browser.tabs.onRemoved.addListener((tabId) => {
+    releaseCaptureImage(tabId);
     closedTabIds.add(tabId);
     captureStates.delete(tabId);
   });
@@ -1041,6 +1110,10 @@
           ? handleRegionPicked(senderTabId)
           : handleRegionPickCancelled(senderTabId),
       );
+    }
+
+    if (message.type === "OPEN_EDITOR") {
+      return openEditor(message.tabId);
     }
 
     return undefined;

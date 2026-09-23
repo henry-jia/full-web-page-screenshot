@@ -185,5 +185,59 @@
   },
   "pick_cancelled": {
     "message": "Region selection cancelled."
+  },
+  "popup_open_editor_hint": {
+    "message": "Click the thumbnail to annotate the image in the editor."
+  },
+  "popup_editor_unavailable": {
+    "message": "No captured image to edit; please take a capture first."
+  },
+  "result_thumbnail_alt": {
+    "message": "Capture result thumbnail"
+  },
+  "editor_title": {
+    "message": "Edit screenshot"
+  },
+  "tool_text": {
+    "message": "Text"
+  },
+  "tool_rect": {
+    "message": "Rectangle"
+  },
+  "tool_ellipse": {
+    "message": "Ellipse"
+  },
+  "tool_line": {
+    "message": "Line"
+  },
+  "tool_arrow": {
+    "message": "Arrow"
+  },
+  "tool_mosaic": {
+    "message": "Mosaic"
+  },
+  "editor_undo": {
+    "message": "Undo"
+  },
+  "editor_save": {
+    "message": "Save"
+  },
+  "editor_saving": {
+    "message": "Saving…"
+  },
+  "editor_saved_at": {
+    "message": "Saved: "
+  },
+  "editor_save_failed": {
+    "message": "Saving failed. Please try again."
+  },
+  "editor_load_failed": {
+    "message": "Could not load the capture; please capture again from the tab."
+  },
+  "editor_text_prompt": {
+    "message": "Type text, Enter to commit, Esc to cancel"
+  },
+  "editor_hint": {
+    "message": "Pick a tool and drag on the image; for text, click where it should start."
   }
 }

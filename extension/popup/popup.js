@@ -10,6 +10,8 @@
   const segmentCount = document.getElementById("segment-count");
   const progressTrack = document.getElementById("progress-track");
   const progressFill = document.getElementById("progress-fill");
+  const resultPreview = document.getElementById("result-preview");
+  const resultThumbnail = document.getElementById("result-thumbnail");
   let activeTabId = null;
   let pollTimer = null;
 
@@ -33,6 +35,9 @@
     }
     for (const element of document.querySelectorAll("[data-i18n-aria-label]")) {
       element.setAttribute("aria-label", t(element.dataset.i18nAriaLabel));
+    }
+    for (const element of document.querySelectorAll("[data-i18n-alt]")) {
+      element.setAttribute("alt", t(element.dataset.i18nAlt));
     }
   }
 
@@ -65,6 +70,44 @@
     progressTrack.hidden = !busy || total === 0;
     progressTrack.setAttribute("aria-valuenow", String(progress));
     progressFill.style.width = `${progress}%`;
+
+    const showPreview =
+      state.status === "success" &&
+      typeof state.thumbnail === "string" &&
+      state.thumbnail.length > 0;
+    resultPreview.hidden = !showPreview;
+    if (showPreview && resultThumbnail.dataset.thumbnail !== state.thumbnail) {
+      resultThumbnail.dataset.thumbnail = state.thumbnail;
+      resultThumbnail.src = state.thumbnail;
+    }
+  }
+
+  async function openEditor() {
+    if (!Number.isInteger(activeTabId)) {
+      return;
+    }
+
+    try {
+      const result = await browser.runtime.sendMessage({
+        type: "OPEN_EDITOR",
+        tabId: activeTabId,
+      });
+      if (!result || result.accepted !== true) {
+        renderState({
+          status: "error",
+          completed: 0,
+          total: 0,
+          message: t("popup_editor_unavailable"),
+        });
+      }
+    } catch (error) {
+      renderState({
+        status: "error",
+        completed: 0,
+        total: 0,
+        message: t("popup_editor_unavailable"),
+      });
+    }
   }
 
   async function queryState() {
@@ -182,6 +225,7 @@
 
   captureButton.addEventListener("click", startCapture);
   regionButton.addEventListener("click", startRegionCapture);
+  resultThumbnail.addEventListener("click", openEditor);
   globalThis.addEventListener("unload", () => {
     if (pollTimer !== null) {
       globalThis.clearInterval(pollTimer);

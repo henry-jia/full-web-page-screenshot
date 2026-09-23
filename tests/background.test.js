@@ -36,7 +36,36 @@ function createBackgroundHarness({
   let messageListener = null;
   let tabRemovedListener = null;
   const badgeCalls = [];
+  const windowCreations = [];
   let popupOpenCount = 0;
+  const baseCreateElement = documentApi.createElement;
+  let primaryCanvasServed = false;
+  const documentWithThumbnails = {
+    ...documentApi,
+    createElement(tag) {
+      if (baseCreateElement && tag === "canvas" && !primaryCanvasServed) {
+        primaryCanvasServed = true;
+        return baseCreateElement(tag);
+      }
+      return {
+        width: 0,
+        height: 0,
+        getContext() {
+          return {
+            drawImage() {},
+            fillRect() {},
+            imageSmoothingEnabled: true,
+          };
+        },
+        toBlob(callback) {
+          callback({ type: "image/png" });
+        },
+        toDataURL() {
+          return "data:image/png;base64,thumbnail";
+        },
+      };
+    },
+  };
   const browser = {
     browserAction: {
       openPopup() {
@@ -53,6 +82,9 @@ function createBackgroundHarness({
       },
     },
     runtime: {
+      getURL(resourcePath) {
+        return `moz-extension://harness/${resourcePath}`;
+      },
       onMessage: {
         addListener(listener) {
           messageListener = listener;
@@ -73,6 +105,12 @@ function createBackgroundHarness({
     },
     downloads: {
       download,
+    },
+    windows: {
+      create(details) {
+        windowCreations.push(details);
+        return Promise.resolve({ id: 100 + windowCreations.length });
+      },
     },
     i18n: {
       getMessage(key, substitutions) {
@@ -95,7 +133,7 @@ function createBackgroundHarness({
     Date,
     Image: ImageClass,
     URL: urlApi,
-    document: documentApi,
+    document: documentWithThumbnails,
     setTimeout: timer,
     clearTimeout,
   });
@@ -104,6 +142,7 @@ function createBackgroundHarness({
 
   return {
     badgeCalls,
+    windowCreations,
     get popupOpenCount() {
       return popupOpenCount;
     },
@@ -1670,7 +1709,7 @@ test("a failed capture flags the badge with an error mark", async () => {
   assert.equal(colors[colors.length - 1], "#b33747");
 });
 
-function createCapturingHarness({ tab, metrics, onScrollCommand }) {
+function createCapturingHarness({ tab, metrics, onScrollCommand, urlApi }) {
   const drawCalls = [];
   const context2d = {
     fillStyle: "",
@@ -1729,7 +1768,7 @@ function createCapturingHarness({ tab, metrics, onScrollCommand }) {
       callback();
       return 1;
     },
-    urlApi: {
+    urlApi: urlApi || {
       createObjectURL: () => "blob:fixture",
       revokeObjectURL() {},
     },
@@ -1883,4 +1922,141 @@ test("a segment that keeps drifting fails closed without downloading", async () 
   assert.equal(state.captureCount, 3);
   assert.equal(state.downloadCount, 0);
   assert.equal(drawCalls.length, 0);
+});
+
+function createPreviewUrlApi(record) {
+  let counter = 0;
+  return {
+    createObjectURL() {
+      counter += 1;
+      return `blob:preview-${counter}`;
+    },
+    revokeObjectURL(url) {
+      record.revoked.push(url);
+    },
+  };
+}
+
+test("a successful capture keeps a thumbnail and an image URL for the editor", async () => {
+  const tab = { id: 95, windowId: 2, active: true, url: "https://example.test/" };
+  const metrics = {
+    documentWidth: 800,
+    documentHeight: 1200,
+    viewportWidth: 800,
+    viewportHeight: 600,
+    devicePixelRatio: 1,
+  };
+  const record = { revoked: [] };
+  const { harness, state } = createCapturingHarness({
+    tab,
+    metrics,
+    urlApi: createPreviewUrlApi(record),
+    onScrollCommand(message) {
+      return {
+        ok: true,
+        value: {
+          actualX: message.segment.x,
+          actualY: message.segment.y,
+          metrics,
+        },
+      };
+    },
+  });
+
+  await harness.sendRuntimeMessage({ type: "START_CAPTURE", tabId: tab.id });
+  const result = await waitForTerminalState(harness, tab.id);
+
+  assert.equal(result.status, "success");
+  assert.equal(result.thumbnail, "data:image/png;base64,thumbnail");
+  assert.equal(typeof result.imageUrl, "string");
+  assert.ok(result.imageUrl.startsWith("blob:preview-"));
+  assert.equal(state.downloadCount, 1);
+});
+
+test("OPEN_EDITOR opens the editor window with the captured image", async () => {
+  const tab = { id: 96, windowId: 2, active: true, url: "https://example.test/" };
+  const metrics = {
+    documentWidth: 800,
+    documentHeight: 1200,
+    viewportWidth: 800,
+    viewportHeight: 600,
+    devicePixelRatio: 1,
+  };
+  const record = { revoked: [] };
+  const { harness } = createCapturingHarness({
+    tab,
+    metrics,
+    urlApi: createPreviewUrlApi(record),
+    onScrollCommand(message) {
+      return {
+        ok: true,
+        value: {
+          actualX: message.segment.x,
+          actualY: message.segment.y,
+          metrics,
+        },
+      };
+    },
+  });
+
+  const rejected = await harness.sendRuntimeMessage({
+    type: "OPEN_EDITOR",
+    tabId: tab.id,
+  });
+  assert.equal(rejected.accepted, false);
+  assert.equal(harness.windowCreations.length, 0);
+
+  await harness.sendRuntimeMessage({ type: "START_CAPTURE", tabId: tab.id });
+  await waitForTerminalState(harness, tab.id);
+
+  const opened = await harness.sendRuntimeMessage({
+    type: "OPEN_EDITOR",
+    tabId: tab.id,
+  });
+  assert.equal(opened.accepted, true);
+  assert.equal(harness.windowCreations.length, 1);
+  const created = harness.windowCreations[0];
+  assert.equal(created.type, "popup");
+  assert.ok(created.url.startsWith("moz-extension://harness/editor/editor.html?"));
+  assert.ok(created.url.includes(`src=${encodeURIComponent("blob:preview-")}`));
+  assert.ok(created.url.includes("name=full-page-example.test-"));
+});
+
+test("starting a new capture revokes the previous image URL", async () => {
+  const tab = { id: 97, windowId: 2, active: true, url: "https://example.test/" };
+  const metrics = {
+    documentWidth: 800,
+    documentHeight: 1200,
+    viewportWidth: 800,
+    viewportHeight: 600,
+    devicePixelRatio: 1,
+  };
+  const record = { revoked: [] };
+  const { harness } = createCapturingHarness({
+    tab,
+    metrics,
+    urlApi: createPreviewUrlApi(record),
+    onScrollCommand(message) {
+      return {
+        ok: true,
+        value: {
+          actualX: message.segment.x,
+          actualY: message.segment.y,
+          metrics,
+        },
+      };
+    },
+  });
+
+  await harness.sendRuntimeMessage({ type: "START_CAPTURE", tabId: tab.id });
+  const first = await waitForTerminalState(harness, tab.id);
+  assert.equal(first.status, "success");
+  const firstImageUrl = first.imageUrl;
+
+  await harness.sendRuntimeMessage({ type: "START_CAPTURE", tabId: tab.id });
+  const second = await waitForTerminalState(harness, tab.id);
+
+  assert.equal(second.status, "success");
+  assert.ok(record.revoked.includes(firstImageUrl));
+  assert.notEqual(second.imageUrl, firstImageUrl);
 });

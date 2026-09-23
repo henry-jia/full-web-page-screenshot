@@ -185,5 +185,59 @@
   },
   "pick_cancelled": {
     "message": "已取消區域選取。"
+  },
+  "popup_open_editor_hint": {
+    "message": "點擊縮圖可開啟編輯器標註圖片。"
+  },
+  "popup_editor_unavailable": {
+    "message": "沒有可編輯的截圖；請先完成一次截取。"
+  },
+  "result_thumbnail_alt": {
+    "message": "截取結果縮圖"
+  },
+  "editor_title": {
+    "message": "編輯截圖"
+  },
+  "tool_text": {
+    "message": "文字"
+  },
+  "tool_rect": {
+    "message": "矩形"
+  },
+  "tool_ellipse": {
+    "message": "橢圓"
+  },
+  "tool_line": {
+    "message": "直線"
+  },
+  "tool_arrow": {
+    "message": "箭頭"
+  },
+  "tool_mosaic": {
+    "message": "馬賽克"
+  },
+  "editor_undo": {
+    "message": "復原"
+  },
+  "editor_save": {
+    "message": "儲存"
+  },
+  "editor_saving": {
+    "message": "儲存中…"
+  },
+  "editor_saved_at": {
+    "message": "已儲存："
+  },
+  "editor_save_failed": {
+    "message": "儲存失敗，請再試一次。"
+  },
+  "editor_load_failed": {
+    "message": "無法載入截圖；請回到分頁重新截取。"
+  },
+  "editor_text_prompt": {
+    "message": "輸入文字，Enter 確認，Esc 取消"
+  },
+  "editor_hint": {
+    "message": "選擇工具後在圖片上拖曳；文字工具請點擊位置後輸入。"
   }
 }

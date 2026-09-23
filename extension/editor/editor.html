@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title data-i18n="editor_title"></title>
+    <link rel="stylesheet" href="editor.css">
+  </head>
+  <body>
+    <header class="toolbar">
+      <div class="tool-group" role="group" id="tool-group">
+        <button type="button" class="tool-button" data-tool="text" data-i18n="tool_text"></button>
+        <button type="button" class="tool-button" data-tool="rect" data-i18n="tool_rect"></button>
+        <button type="button" class="tool-button" data-tool="ellipse" data-i18n="tool_ellipse"></button>
+        <button type="button" class="tool-button" data-tool="line" data-i18n="tool_line"></button>
+        <button type="button" class="tool-button" data-tool="arrow" data-i18n="tool_arrow"></button>
+        <button type="button" class="tool-button" data-tool="mosaic" data-i18n="tool_mosaic"></button>
+      </div>
+
+      <div class="tool-group" role="group" id="color-group" aria-label="color">
+        <button type="button" class="color-swatch" data-color="#e5484d" style="background:#e5484d"></button>
+        <button type="button" class="color-swatch" data-color="#f5a623" style="background:#f5a623"></button>
+        <button type="button" class="color-swatch" data-color="#3e9bff" style="background:#3e9bff"></button>
+        <button type="button" class="color-swatch" data-color="#34c77b" style="background:#34c77b"></button>
+        <button type="button" class="color-swatch" data-color="#ffffff" style="background:#ffffff"></button>
+        <button type="button" class="color-swatch" data-color="#000000" style="background:#000000"></button>
+      </div>
+
+      <div class="tool-group" role="group" id="size-group" aria-label="size">
+        <button type="button" class="size-button" data-linewidth="3">S</button>
+        <button type="button" class="size-button" data-linewidth="6">M</button>
+        <button type="button" class="size-button" data-linewidth="12">L</button>
+      </div>
+
+      <div class="tool-group">
+        <button type="button" id="undo-button" data-i18n="editor_undo"></button>
+        <button type="button" id="save-button" class="primary" data-i18n="editor_save"></button>
+      </div>
+    </header>
+
+    <p class="hint" data-i18n="editor_hint"></p>
+
+    <main id="canvas-wrap" class="canvas-wrap">
+      <canvas id="base-canvas"></canvas>
+      <canvas id="overlay-canvas"></canvas>
+      <input id="text-input" type="text" hidden data-i18n-placeholder="editor_text_prompt">
+    </main>
+
+    <footer class="status-bar">
+      <span id="editor-status"></span>
+      <span id="saved-path" class="saved-path"></span>
+    </footer>
+
+    <script src="../i18n.js"></script>
+    <script src="../annotate.js"></script>
+    <script src="editor.js"></script>
+  </body>
+</html>

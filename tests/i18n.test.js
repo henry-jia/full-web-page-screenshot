@@ -34,6 +34,8 @@ function collectSourcesText() {
     path.join(extensionRoot, "background.js"),
     path.join(extensionRoot, "popup", "popup.js"),
     path.join(extensionRoot, "popup", "popup.html"),
+    path.join(extensionRoot, "editor", "editor.js"),
+    path.join(extensionRoot, "editor", "editor.html"),
     path.join(extensionRoot, "manifest.json"),
   ];
 
@@ -47,7 +49,7 @@ function collectDirectlyReferencedKeys() {
   for (const match of text.matchAll(/\bt\("([a-z0-9_]+)"/g)) {
     keys.add(match[1]);
   }
-  for (const match of text.matchAll(/data-i18n(?:-aria-label)?="([a-z0-9_]+)"/g)) {
+  for (const match of text.matchAll(/data-i18n(?:-aria-label|-alt|-placeholder)?="([a-z0-9_]+)"/g)) {
     keys.add(match[1]);
   }
   for (const match of text.matchAll(/__MSG_([a-z0-9_]+)__/g)) {

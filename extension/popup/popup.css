@@ -156,6 +156,32 @@ h1 {
   font-size: 12px;
 }
 
+.result-preview {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+#result-thumbnail {
+  display: block;
+  max-width: 240px;
+  max-height: 240px;
+  width: auto;
+  height: auto;
+  border: 1px solid var(--color-hairline);
+  border-radius: 6px;
+  cursor: zoom-in;
+}
+
+#result-thumbnail:hover {
+  border-color: var(--color-action-primary);
+}
+
+.result-preview figcaption {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .capture-button,
   .progress-fill {

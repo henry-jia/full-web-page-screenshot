@@ -1,5 +1,13 @@
 # Change Log
 
+## [20260923] Post-capture thumbnail preview and in-extension image editor
+
+- **類型**：Feature
+- **影響範圍**：extension, tests, docs
+- **內容**：截取成功後 background 保留原圖 object URL 並生成 ≤240px 縮圖存入 capture state，popup 成功態顯示縮圖，點擊即以 `browser.windows.create` 開啟新視窗編輯器（載入完整解析度原圖）；編輯器提供文字、矩形、橢圓、直線、箭頭、馬賽克六種工具，6 色 × 3 檔粗細，所有繪製經由 `extension/annotate.js` 的可序列化指令重放（undo 不存影像快照，大圖安全）；馬賽克為真像素化（降採樣+關閉平滑回繪）；儲存輸出 `<原名>-edited.png` 並顯示 `downloads.search` 回報的實際路徑；新截取或分頁關閉時釋放舊 object URL；新增 `tests/annotate.test.js`（幾何/重放/馬賽克）與 background 預覽生命週期測試；zh_TW/en 文案同步擴充；95 項測試通過。
+- **關聯文件**：REQ-20260923-001, 220
+- **操作人**：Kimi Code
+
 ## [20260922] Release version 0.1.7: WebExtension i18n and region capture stitching fixes
 
 - **類型**：Release

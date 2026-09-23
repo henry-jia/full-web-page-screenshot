@@ -1,0 +1,137 @@
+:root {
+  color-scheme: dark;
+  --bg: #0f1115;
+  --panel: #171a21;
+  --line: #262b38;
+  --ink: #e9ebf2;
+  --ink2: #9aa0ae;
+  --acc: #4c9aff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 13px/1.5 system-ui, "PingFang TC", "Microsoft JhengHei", sans-serif;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.tool-group {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+button {
+  font: inherit;
+  color: var(--ink);
+  background: #20242f;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--acc);
+}
+
+button.active,
+button[aria-pressed="true"] {
+  background: var(--acc);
+  border-color: var(--acc);
+  color: #fff;
+}
+
+button.primary {
+  background: #2f6f4f;
+  border-color: #2f6f4f;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.color-swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.color-swatch.active {
+  outline: 2px solid var(--acc);
+  outline-offset: 1px;
+}
+
+.hint {
+  margin: 0;
+  padding: 4px 12px;
+  color: var(--ink2);
+  font-size: 12px;
+}
+
+.canvas-wrap {
+  position: relative;
+  flex: 1;
+  overflow: auto;
+  margin: 8px 12px;
+  background: #0a0b0e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.canvas-wrap canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+}
+
+#overlay-canvas {
+  cursor: crosshair;
+}
+
+#text-input {
+  position: absolute;
+  z-index: 3;
+  font: 16px system-ui, sans-serif;
+  padding: 2px 6px;
+  border: 1px dashed var(--acc);
+  border-radius: 4px;
+  background: rgba(15, 17, 21, 0.9);
+  color: var(--ink);
+  min-width: 160px;
+}
+
+.status-bar {
+  display: flex;
+  gap: 16px;
+  padding: 6px 12px;
+  color: var(--ink2);
+  border-top: 1px solid var(--line);
+  min-height: 30px;
+}
+
+.saved-path {
+  color: var(--ink);
+  user-select: text;
+  word-break: break-all;
+}
