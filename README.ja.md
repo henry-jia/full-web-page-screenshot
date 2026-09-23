@@ -33,7 +33,9 @@
 
 ### Firefox Add-ons
 
-バージョン 0.1.0 は AMO の自己配布チャネル（非公開）で Mozilla により署名済みです（2026-09-07）。GitHub Release に添付された署名済み XPI をインストールしてください。ブラウザー再起動後も残り、通常の拡張機能と同様に更新されます。一般向けの公開 AMO リスティングは、必要になれば後から申請できます。
+公開 AMO リスティングから最新版をインストールしてください：[Full Web Page Screenshot](https://addons.mozilla.org/ja/firefox/addon/full-web-page-screenshot/)。AMO からのインストールは Mozilla 署名済みで、ブラウザー再起動後も残り、自動更新されます。
+
+または GitHub Release に添付された署名済み XPI をインストールできます（バージョン 0.1.0 は 2026-09-07 に AMO 自己配布チャネルで署名済み）。
 
 ### 一時的な開発インストール
 

@@ -57,7 +57,8 @@ The target public source repository is `henry-jia/full-web-page-screenshot`.
 
 ## Publication status
 
-- 2026-09-07: version 0.1.0 submitted to the AMO self-distribution (unlisted) channel and approved with 0 errors, 0 warnings. The Mozilla-signed XPI is installed directly and attached to the GitHub `v0.1.0` release. No public AMO listing exists yet; submit a listed version later if public distribution is wanted.
+- 2026-09-23: version 0.1.8 submitted to the AMO listed channel and approved. Public listing: https://addons.mozilla.org/en-US/firefox/addon/full-web-page-screenshot/ (add-on ID `full-web-page-screenshot@henry-jia.github.io`).
+- 2026-09-07: version 0.1.0 submitted to the AMO self-distribution (unlisted) channel and approved with 0 errors, 0 warnings. The Mozilla-signed XPI is installed directly and attached to the GitHub `v0.1.0` release.
 
 ## Rollback
 

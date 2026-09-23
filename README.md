@@ -33,7 +33,9 @@ Permissions:
 
 ### Firefox Add-ons
 
-Version 0.1.0 was signed by Mozilla through the AMO self-distribution channel (unlisted, 2026-09-07). Install the signed XPI attached to the GitHub Release; it survives browser restarts and updates like a normal extension. A public AMO listing can still be submitted later if wider distribution is wanted.
+Install the latest version from the public AMO listing: [Full Web Page Screenshot](https://addons.mozilla.org/en-US/firefox/addon/full-web-page-screenshot/). AMO installs are signed by Mozilla, survive browser restarts, and update automatically.
+
+Alternatively, install the signed XPI attached to a GitHub Release (version 0.1.0 was signed through the AMO self-distribution channel, 2026-09-07).
 
 ### Temporary development install
 

@@ -33,7 +33,9 @@
 
 ### Firefox 官方附加元件商店
 
-版本 0.1.0 已透過 AMO 自行分發管道（非公開）由 Mozilla 完成簽名（2026-09-07）。請安裝 GitHub Release 附加的已簽名 XPI；重新啟動瀏覽器後仍會保留，並像一般擴充套件一樣更新。若有更廣泛散佈的需求，之後仍可申請公開 AMO 上架。
+請從公開 AMO 商店安裝最新版本：[Full Web Page Screenshot](https://addons.mozilla.org/zh-TW/firefox/addon/full-web-page-screenshot/)。AMO 安裝由 Mozilla 簽署，重新啟動瀏覽器後仍會保留，並自動更新。
+
+也可以安裝 GitHub Release 附加的已簽名 XPI（版本 0.1.0 於 2026-09-07 透過 AMO 自行分發管道完成簽名）。
 
 ### 臨時開發安裝
 

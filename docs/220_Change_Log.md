@@ -1,5 +1,13 @@
 # Change Log
 
+## [20260923] Version 0.1.8 approved on the AMO listed channel
+
+- **類型**：Release
+- **影響範圍**：docs, README
+- **內容**：0.1.8 透過 AMO 公開（listed）管道提交並通過審核，公開商店頁面上線：https://addons.mozilla.org/en-US/firefox/addon/full-web-page-screenshot/ ；三語 README 安裝段落改以 AMO 為首選安裝管道（保留 GitHub Release 簽名 XPI 作為替代），`docs/600_Deployment.md` Publication status 同步更新。
+- **關聯文件**：220, 600, AMO_LISTING
+- **操作人**：Kimi Code
+
 ## [20260923] Release version 0.1.8: per-text styling, WYSIWYG wrapping, editor performance overhaul
 
 - **類型**：Feature + Performance
