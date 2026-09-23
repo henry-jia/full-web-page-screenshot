@@ -18,6 +18,7 @@
     "line",
     "arrow",
     "mosaic",
+    "badge",
   ]);
 
   const ARROW_HEAD_ANGLE = 0.45;
@@ -87,6 +88,98 @@
     });
   }
 
+  function contrastTextColor(background) {
+    const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(
+      String(background),
+    );
+    if (!match) {
+      return "#ffffff";
+    }
+    const luminance =
+      (0.2126 * parseInt(match[1], 16) +
+        0.7152 * parseInt(match[2], 16) +
+        0.0722 * parseInt(match[3], 16)) /
+      255;
+    return luminance > 0.6 ? "#000000" : "#ffffff";
+  }
+
+  function textLineHeight(size) {
+    return Math.round(size * 1.25);
+  }
+
+  function wrapTextLine(context, text, maxWidth) {
+    if (
+      !Number.isFinite(maxWidth) ||
+      maxWidth <= 0 ||
+      context.measureText(text).width <= maxWidth
+    ) {
+      return [text];
+    }
+    const lines = [];
+    let current = "";
+    for (const char of text) {
+      const candidate = current + char;
+      if (current && context.measureText(candidate).width > maxWidth) {
+        const spaceIndex = current.lastIndexOf(" ");
+        if (spaceIndex > 0) {
+          lines.push(current.slice(0, spaceIndex));
+          current = current.slice(spaceIndex + 1) + char;
+        } else {
+          lines.push(current);
+          current = char;
+        }
+      } else {
+        current = candidate;
+      }
+    }
+    lines.push(current);
+    return lines;
+  }
+
+  const metricsCache = new WeakMap();
+
+  function measureTextBlock(context, command) {
+    context.font = `${command.size}px ${command.fontFamily || "system-ui, sans-serif"}`;
+    const cacheKey = [
+      command.size,
+      command.fontFamily || "",
+      command.maxWidth || 0,
+      command.text,
+    ].join("\t");
+    const cached = metricsCache.get(command);
+    if (cached && cached.key === cacheKey) {
+      return cached.metrics;
+    }
+    const maxWidth =
+      Number.isFinite(command.maxWidth) && command.maxWidth > 0
+        ? command.maxWidth
+        : null;
+    const lines = [];
+    for (const hardLine of String(command.text).split("\n")) {
+      if (maxWidth) {
+        lines.push(...wrapTextLine(context, hardLine, maxWidth));
+      } else {
+        lines.push(hardLine);
+      }
+    }
+    const lineHeight = textLineHeight(command.size);
+    let width = 0;
+    const lineWidths = lines.map((line) => {
+      const lineWidth = context.measureText(line).width;
+      width = Math.max(width, lineWidth);
+      return lineWidth;
+    });
+    const metrics = Object.freeze({
+      width,
+      height: lineHeight * lines.length,
+      lineHeight,
+      lines,
+      lineWidths,
+    });
+    metricsCache.set(command, { key: cacheKey, metrics });
+    return metrics;
+  }
+
   function applyStrokeStyle(context, command) {
     context.strokeStyle = command.color;
     context.lineWidth = command.lineWidth;
@@ -108,10 +201,28 @@
 
     switch (command.type) {
       case "text": {
-        context.fillStyle = command.color;
-        context.font = `${command.size}px system-ui, sans-serif`;
         context.textBaseline = "top";
-        context.fillText(command.text, command.x, command.y);
+        context.textAlign = "left";
+        const metrics = measureTextBlock(context, command);
+        metrics.lines.forEach((line, index) => {
+          const lineY = command.y + index * metrics.lineHeight;
+          if (command.background) {
+            context.save();
+            context.globalAlpha = Number.isFinite(command.backgroundAlpha)
+              ? command.backgroundAlpha
+              : 0.4;
+            context.fillStyle = command.background;
+            context.fillRect(
+              command.x,
+              lineY,
+              metrics.lineWidths[index],
+              metrics.lineHeight,
+            );
+            context.restore();
+          }
+          context.fillStyle = command.color;
+          context.fillText(line, command.x, lineY);
+        });
         return;
       }
       case "rect": {
@@ -157,6 +268,19 @@
           context.lineTo(head[1].x, head[1].y);
           context.stroke();
         }
+        return;
+      }
+      case "badge": {
+        const radius = command.radius || 16;
+        context.fillStyle = command.color;
+        context.beginPath();
+        context.arc(command.x, command.y, radius, 0, Math.PI * 2);
+        context.fill();
+        context.fillStyle = contrastTextColor(command.color);
+        context.font = `bold ${Math.round(radius * 1.1)}px system-ui, sans-serif`;
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.fillText(String(command.number), command.x, command.y);
         return;
       }
       case "mosaic": {
@@ -217,9 +341,13 @@
     DEFAULT_MOSAIC_BLOCK_SIZE,
     TOOL_TYPES,
     arrowHeadPoints,
+    contrastTextColor,
     drawCommand,
+    measureTextBlock,
     mosaicSampleSize,
     normalizeRect,
     replayCommands,
+    textLineHeight,
+    wrapTextLine,
   });
 });

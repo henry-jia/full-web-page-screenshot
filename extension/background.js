@@ -382,7 +382,7 @@
       `&name=${encodeURIComponent(state.filename || "capture.png")}`;
     await browser.windows.create({
       url: `${browser.runtime.getURL("editor/editor.html")}${query}`,
-      type: "popup",
+      type: "normal",
       width: 1200,
       height: 840,
     });

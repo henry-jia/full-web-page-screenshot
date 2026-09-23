@@ -216,6 +216,21 @@
   "tool_mosaic": {
     "message": "Mosaic"
   },
+  "tool_badge": {
+    "message": "Number"
+  },
+  "editor_redo": {
+    "message": "Redo"
+  },
+  "editor_zoom_in": {
+    "message": "Zoom in"
+  },
+  "editor_zoom_out": {
+    "message": "Zoom out"
+  },
+  "editor_zoom_fit": {
+    "message": "Fit to window"
+  },
   "editor_undo": {
     "message": "Undo"
   },
@@ -234,8 +249,14 @@
   "editor_load_failed": {
     "message": "Could not load the capture; please capture again from the tab."
   },
-  "editor_text_prompt": {
-    "message": "Type text, Enter to commit, Esc to cancel"
+  "editor_opacity": {
+    "message": "Opacity"
+  },
+  "editor_bg_none": {
+    "message": "No background"
+  },
+  "editor_text_hint": {
+    "message": "Click the image to place text; click existing text to select or drag it, double-click to edit its content and style, Delete to remove. The box width sets the wrapping; drag its corner to resize."
   },
   "editor_hint": {
     "message": "Pick a tool and drag on the image; for text, click where it should start."

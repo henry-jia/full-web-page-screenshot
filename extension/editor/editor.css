@@ -88,6 +88,13 @@ button:disabled {
   font-size: 12px;
 }
 
+.zoom-level {
+  min-width: 44px;
+  text-align: center;
+  color: var(--ink2);
+  font-variant-numeric: tabular-nums;
+}
+
 .canvas-wrap {
   position: relative;
   flex: 1;
@@ -109,16 +116,55 @@ button:disabled {
   cursor: crosshair;
 }
 
-#text-input {
+.text-editor {
   position: absolute;
   z-index: 3;
-  font: 16px system-ui, sans-serif;
+  font: 40px/1.25 system-ui, sans-serif;
   padding: 2px 6px;
   border: 1px dashed var(--acc);
   border-radius: 4px;
   background: rgba(15, 17, 21, 0.9);
-  color: var(--ink);
-  min-width: 160px;
+  min-width: 120px;
+  min-height: 1.4em;
+  resize: both;
+  overflow: auto;
+}
+
+.text-style-bar {
+  position: absolute;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+
+.text-style-bar[hidden] {
+  display: none;
+}
+
+.color-swatch.bg-none {
+  color: var(--ink2);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.alpha-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.alpha-control input[type="range"] {
+  width: 90px;
 }
 
 .status-bar {

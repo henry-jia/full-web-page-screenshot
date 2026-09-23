@@ -216,6 +216,21 @@
   "tool_mosaic": {
     "message": "馬賽克"
   },
+  "tool_badge": {
+    "message": "序號"
+  },
+  "editor_redo": {
+    "message": "重做"
+  },
+  "editor_zoom_in": {
+    "message": "放大"
+  },
+  "editor_zoom_out": {
+    "message": "縮小"
+  },
+  "editor_zoom_fit": {
+    "message": "適應視窗"
+  },
   "editor_undo": {
     "message": "復原"
   },
@@ -234,8 +249,14 @@
   "editor_load_failed": {
     "message": "無法載入截圖；請回到分頁重新截取。"
   },
-  "editor_text_prompt": {
-    "message": "輸入文字，Enter 確認，Esc 取消"
+  "editor_opacity": {
+    "message": "不透明度"
+  },
+  "editor_bg_none": {
+    "message": "無底色"
+  },
+  "editor_text_hint": {
+    "message": "點擊圖片放置文字；點擊現有文字可選取、按住拖曳移動，雙擊重新編輯內容與樣式，Delete 刪除；框寬決定換行，可拖曳邊角調整。"
   },
   "editor_hint": {
     "message": "選擇工具後在圖片上拖曳；文字工具請點擊位置後輸入。"

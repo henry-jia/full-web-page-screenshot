@@ -2016,7 +2016,7 @@ test("OPEN_EDITOR opens the editor window with the captured image", async () => 
   assert.equal(opened.accepted, true);
   assert.equal(harness.windowCreations.length, 1);
   const created = harness.windowCreations[0];
-  assert.equal(created.type, "popup");
+  assert.equal(created.type, "normal");
   assert.ok(created.url.startsWith("moz-extension://harness/editor/editor.html?"));
   assert.ok(created.url.includes(`src=${encodeURIComponent("blob:preview-")}`));
   assert.ok(created.url.includes("name=full-page-example.test-"));

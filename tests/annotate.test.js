@@ -13,7 +13,12 @@ function createContextRecorder() {
     lineWidth: 0,
     font: "",
     textBaseline: "",
+    textAlign: "",
+    globalAlpha: 1,
     imageSmoothingEnabled: true,
+    measureText(text) {
+      return { width: String(text).length * 10 };
+    },
     beginPath() {
       calls.push(["beginPath"]);
     },
@@ -28,6 +33,21 @@ function createContextRecorder() {
     },
     strokeRect(x, y, width, height) {
       calls.push(["strokeRect", x, y, width, height]);
+    },
+    fillRect(...args) {
+      calls.push(["fillRect", ...args]);
+    },
+    arc(...args) {
+      calls.push(["arc", ...args]);
+    },
+    fill() {
+      calls.push(["fill"]);
+    },
+    save() {
+      calls.push(["save"]);
+    },
+    restore() {
+      calls.push(["restore"]);
     },
     ellipse(x, y, radiusX, radiusY, rotation, start, end) {
       calls.push(["ellipse", x, y, radiusX, radiusY, rotation, start, end]);
@@ -225,4 +245,127 @@ test("unknown commands are rejected", () => {
     () => FwpsAnnotate.drawCommand(context, { type: "spray" }),
     /Unknown annotation command/,
   );
+});
+
+test("badge commands draw a filled circle with a contrasted number", () => {
+  const context = createContextRecorder();
+  FwpsAnnotate.drawCommand(context, {
+    type: "badge",
+    x: 50,
+    y: 60,
+    number: 3,
+    color: "#e5484d",
+    radius: 20,
+  });
+
+  const arc = context.calls.find((call) => call[0] === "arc");
+  assert.deepEqual(arc, ["arc", 50, 60, 20, 0, Math.PI * 2]);
+  const label = context.calls.find((call) => call[0] === "fillText");
+  assert.deepEqual(label, ["fillText", "3", 50, 60]);
+  assert.equal(context.textAlign, "center");
+  assert.equal(context.textBaseline, "middle");
+});
+
+test("contrastTextColor picks black on light backgrounds and white on dark", () => {
+  assert.equal(FwpsAnnotate.contrastTextColor("#ffffff"), "#000000");
+  assert.equal(FwpsAnnotate.contrastTextColor("#f5a623"), "#000000");
+  assert.equal(FwpsAnnotate.contrastTextColor("#e5484d"), "#ffffff");
+  assert.equal(FwpsAnnotate.contrastTextColor("#000000"), "#ffffff");
+  assert.equal(FwpsAnnotate.contrastTextColor("bogus"), "#ffffff");
+});
+
+test("text commands draw a translucent highlight behind each line", () => {
+  const context = createContextRecorder();
+  FwpsAnnotate.drawCommand(context, {
+    type: "text",
+    x: 10,
+    y: 20,
+    text: "ab\ncde",
+    color: "#ffffff",
+    size: 20,
+    fontFamily: "monospace",
+    background: "#f5a623",
+  });
+
+  const fills = context.calls.filter((call) => call[0] === "fillRect");
+  assert.equal(fills.length, 2);
+  assert.deepEqual(fills[0], ["fillRect", 10, 20, 20, 25]);
+  assert.deepEqual(fills[1], ["fillRect", 10, 45, 30, 25]);
+  const texts = context.calls.filter((call) => call[0] === "fillText");
+  assert.deepEqual(texts, [
+    ["fillText", "ab", 10, 20],
+    ["fillText", "cde", 10, 45],
+  ]);
+  assert.equal(context.font, "20px monospace");
+});
+
+test("text highlight uses the command backgroundAlpha and defaults to 0.4", () => {
+  const custom = createContextRecorder();
+  FwpsAnnotate.drawCommand(custom, {
+    type: "text",
+    x: 0,
+    y: 0,
+    text: "ab",
+    color: "#ffffff",
+    size: 20,
+    fontFamily: "monospace",
+    background: "#f5a623",
+    backgroundAlpha: 0.85,
+  });
+  assert.equal(custom.globalAlpha, 0.85);
+
+  const fallback = createContextRecorder();
+  FwpsAnnotate.drawCommand(fallback, {
+    type: "text",
+    x: 0,
+    y: 0,
+    text: "ab",
+    color: "#ffffff",
+    size: 20,
+    fontFamily: "monospace",
+    background: "#f5a623",
+  });
+  assert.equal(fallback.globalAlpha, 0.4);
+});
+
+test("text commands wrap lines at maxWidth and measure the wrapped block", () => {
+  const context = createContextRecorder();
+  const command = {
+    type: "text",
+    x: 10,
+    y: 20,
+    text: "aaaa bbbb cccc",
+    color: "#ffffff",
+    size: 20,
+    fontFamily: "monospace",
+    maxWidth: 70,
+  };
+
+  const metrics = FwpsAnnotate.measureTextBlock(context, command);
+  assert.deepEqual(metrics.lines, ["aaaa", "bbbb", "cccc"]);
+  assert.equal(metrics.width, 40);
+  assert.equal(metrics.height, 75);
+
+  FwpsAnnotate.drawCommand(context, command);
+  const texts = context.calls.filter((call) => call[0] === "fillText");
+  assert.deepEqual(texts, [
+    ["fillText", "aaaa", 10, 20],
+    ["fillText", "bbbb", 10, 45],
+    ["fillText", "cccc", 10, 70],
+  ]);
+});
+
+test("measureTextBlock reports the widest line and total height", () => {
+  const context = createContextRecorder();
+  const metrics = FwpsAnnotate.measureTextBlock(context, {
+    type: "text",
+    x: 0,
+    y: 0,
+    text: "ab\ncde",
+    size: 20,
+  });
+
+  assert.equal(metrics.width, 30);
+  assert.equal(metrics.height, 50);
+  assert.equal(metrics.lineHeight, 25);
 });

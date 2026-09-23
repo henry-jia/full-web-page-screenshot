@@ -1,5 +1,29 @@
 # Change Log
 
+## [20260923] Release version 0.1.8: per-text styling, WYSIWYG wrapping, editor performance overhaul
+
+- **類型**：Feature + Performance
+- **影響範圍**：extension, tests, docs
+- **內容**：(1) 文字樣式改為跟隨每個文字框——雙擊文字浮出樣式列（字體/字號/文字顏色/底色顏色/不透明度），只作用於該文字，頂部顏色與字號回歸圖形工具專用；單擊僅選取不再彈出樣式列。(2) 高亮底色透明度改為每段文字可調（指令新增 `backgroundAlpha`，舊指令預設 0.4）。(3) 所見即所得換行——輸入框可拖角調寬（`resize: both`），提交時框寬存入指令 `maxWidth`，annotate.js 新增 `wrapTextLine` 按寬換行（優先空格斷行），輸入框寬高鉗制在截圖剩餘範圍內，超邊即所見截斷。(4) 文字工具游標語義：懸停已有文字顯示 move 游標，按住拖曳移動；畫布支援右鍵按住平移並屏蔽右鍵選單。(5) 效能：拖動改為覆蓋層預覽（拖動全程不重繪底圖，落點才一次性重繪）、`measureTextBlock` 以 WeakMap 快取、連續操作（透明度滑桿）以 requestAnimationFrame 合併重繪、底圖預解碼為離屏 canvas 取代每次 drawImage 解碼。(6) 多選統一改樣式移除（樣式現以單框為單位），多選仍支援拖曳與 Delete 刪除。120 項測試通過。
+- **關聯文件**：220, 600
+- **操作人**：Kimi Code
+
+## [20260923] Rework the editor text tool: focus fix, movable and re-editable text items
+
+- **類型**：Bug Fix + Feature
+- **影響範圍**：extension, tests
+- **內容**：修復文字工具完全無反應的真因——pointerdown 的瀏覽器預設動作會把焦點從新開的輸入框搶回 canvas,blur 立刻提交空內容並隱藏輸入框（Node stub 無焦點預設動作，原測試未覆蓋）；現在文字工具點擊時 `preventDefault()`，並有測試鎖定。文字改為動態建立的 textarea（Enter 提交、Shift+Enter 換行、Esc 取消），文字指令升級為可互動項目：點擊選取（虛線框）、拖曳移動、雙擊重新編輯、Delete/Backspace 刪除、Ctrl+點擊多選後統一修改顏色/字號/字體（Sans/Serif/Mono)/底色高亮（40% 透明度色塊，逐行鋪底）；annotate.js 文字渲染支援多行與 `measureTextBlock` 命中測量；undo/redo 後選取集合自動過濾已移除指令。新增 editor/annotate 測試覆蓋文字提交、拖動、雙擊編輯、多選改色、高亮、徽章對比色；108 項測試通過。
+- **關聯文件**：REQ-20260923-001, 220
+- **操作人**：Kimi Code
+
+## [20260923] Editor usability fixes: normal window, zoom, redo, numbered badges
+
+- **類型**：Bug Fix + Feature
+- **影響範圍**：extension, tests
+- **內容**：依實機回饋修正編輯器——(1) 視窗改為 `type: "normal"`，可最大化與調整大小；(2) 新增縮放控制（放大／縮小／適應視窗／百分比顯示）與 Ctrl+滾輪以指標為錨點縮放，縮放只改顯示不影響輸出解析度；(3) 文字工具實測提交路徑正常，但預設字號在大圖縮放顯示下過小難以察覺，字號檔位提升為 24/40/72px 並讓輸入框字號隨縮放預覽；(4) 新增 Redo（按鈕 + Ctrl+Y / Ctrl+Shift+Z），新指令清空 redo 堆疊；(5) 新增「序號」工具：點擊即蓋上純色圓形數字徽章（1、2、3…自動遞增，數字顏色依徽章色亮度自動取黑或白）；新增 `tests/editor.test.js`（DOM stub 直接驗證 text/badge/undo/redo/zoom/save 路徑）與 annotate 徽章測試；100 項測試通過。
+- **關聯文件**：REQ-20260923-001, 220
+- **操作人**：Kimi Code
+
 ## [20260923] Post-capture thumbnail preview and in-extension image editor
 
 - **類型**：Feature

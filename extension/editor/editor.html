@@ -15,6 +15,7 @@
         <button type="button" class="tool-button" data-tool="line" data-i18n="tool_line"></button>
         <button type="button" class="tool-button" data-tool="arrow" data-i18n="tool_arrow"></button>
         <button type="button" class="tool-button" data-tool="mosaic" data-i18n="tool_mosaic"></button>
+        <button type="button" class="tool-button" data-tool="badge" data-i18n="tool_badge"></button>
       </div>
 
       <div class="tool-group" role="group" id="color-group" aria-label="color">
@@ -32,8 +33,16 @@
         <button type="button" class="size-button" data-linewidth="12">L</button>
       </div>
 
+      <div class="tool-group" role="group" aria-label="zoom">
+        <button type="button" id="zoom-out" data-i18n="editor_zoom_out"></button>
+        <span id="zoom-level" class="zoom-level">100%</span>
+        <button type="button" id="zoom-in" data-i18n="editor_zoom_in"></button>
+        <button type="button" id="zoom-fit" data-i18n="editor_zoom_fit"></button>
+      </div>
+
       <div class="tool-group">
         <button type="button" id="undo-button" data-i18n="editor_undo"></button>
+        <button type="button" id="redo-button" data-i18n="editor_redo"></button>
         <button type="button" id="save-button" class="primary" data-i18n="editor_save"></button>
       </div>
     </header>
@@ -43,7 +52,39 @@
     <main id="canvas-wrap" class="canvas-wrap">
       <canvas id="base-canvas"></canvas>
       <canvas id="overlay-canvas"></canvas>
-      <input id="text-input" type="text" hidden data-i18n-placeholder="editor_text_prompt">
+      <div id="text-style-bar" class="text-style-bar" hidden>
+        <select id="text-font-select" aria-label="font">
+          <option value="system-ui, sans-serif">Sans</option>
+          <option value="serif">Serif</option>
+          <option value="monospace">Mono</option>
+        </select>
+        <div class="tool-group" role="group" id="text-size-group" aria-label="text size">
+          <button type="button" class="size-button" data-textsize="24">S</button>
+          <button type="button" class="size-button" data-textsize="40">M</button>
+          <button type="button" class="size-button" data-textsize="72">L</button>
+        </div>
+        <div class="tool-group" role="group" id="text-color-group" aria-label="text color">
+          <button type="button" class="color-swatch" data-color="#e5484d" style="background:#e5484d"></button>
+          <button type="button" class="color-swatch" data-color="#f5a623" style="background:#f5a623"></button>
+          <button type="button" class="color-swatch" data-color="#3e9bff" style="background:#3e9bff"></button>
+          <button type="button" class="color-swatch" data-color="#34c77b" style="background:#34c77b"></button>
+          <button type="button" class="color-swatch" data-color="#ffffff" style="background:#ffffff"></button>
+          <button type="button" class="color-swatch" data-color="#000000" style="background:#000000"></button>
+        </div>
+        <div class="tool-group" role="group" id="text-bg-group" aria-label="background color">
+          <button type="button" class="color-swatch bg-none" data-bgcolor="" data-i18n-title="editor_bg_none">∅</button>
+          <button type="button" class="color-swatch" data-bgcolor="#e5484d" style="background:#e5484d"></button>
+          <button type="button" class="color-swatch" data-bgcolor="#f5a623" style="background:#f5a623"></button>
+          <button type="button" class="color-swatch" data-bgcolor="#3e9bff" style="background:#3e9bff"></button>
+          <button type="button" class="color-swatch" data-bgcolor="#34c77b" style="background:#34c77b"></button>
+          <button type="button" class="color-swatch" data-bgcolor="#ffffff" style="background:#ffffff"></button>
+          <button type="button" class="color-swatch" data-bgcolor="#000000" style="background:#000000"></button>
+        </div>
+        <label class="alpha-control">
+          <span data-i18n="editor_opacity"></span>
+          <input type="range" id="text-alpha" min="10" max="100" step="5" value="40">
+        </label>
+      </div>
     </main>
 
     <footer class="status-bar">
